@@ -62,7 +62,7 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched, style }
               <View style={[styles.statPill, { backgroundColor: colors.muted }]}>
                 <Feather name="droplet" size={10} color={colors.mutedForeground} />
                 <Text style={[styles.statText, { color: colors.mutedForeground }]}>
-                  {formatSOLValue(token.solInCurve)} SOL
+                  LP {token.overview?.liquidity ? `$${formatCompact(token.overview.liquidity)}` : `${formatSOLValue(token.solInCurve)} SOL`}
                 </Text>
               </View>
             </View>

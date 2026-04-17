@@ -36,15 +36,24 @@ export interface TokenOverview {
   holders: number;
 }
 
+function resolutionToSeconds(resolution: string): number {
+  const map: Record<string, number> = {
+    '1m': 60, '3m': 180, '5m': 300, '15m': 900, '30m': 1800,
+    '1H': 3600, '2H': 7200, '4H': 14400, '6H': 21600, '8H': 28800, '12H': 43200,
+    '1D': 86400, '3D': 259200, '1W': 604800,
+  };
+  return map[resolution] ?? 60;
+}
+
 /** Fetch OHLCV candles for a token */
 export async function fetchOHLCV(
   mint: string,
-  resolution = '1m',
+  resolution = '15m',
   limit = 60
 ): Promise<OHLCVBar[]> {
   try {
     const now = Math.floor(Date.now() / 1000);
-    const from = now - limit * 60;
+    const from = now - limit * resolutionToSeconds(resolution);
 
     const { data } = await axios.get(`${BIRDEYE_API}/defi/ohlcv`, {
       headers: birdeyeHeaders,

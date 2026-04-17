@@ -129,7 +129,7 @@ export function useTokenFeed() {
     Promise.all([
       runRugFilter(newToken.mint, newToken.creatorAddress),
       fetchTokenOverview(newToken.mint),
-      fetchOHLCV(newToken.mint, '1h', 24),
+      fetchOHLCV(newToken.mint, '1H', 24),
     ])
       .then(([rugResult, overview, ohlcv]) => {
         const sparklineData = ohlcv.map((b) => b.close);

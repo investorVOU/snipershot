@@ -183,9 +183,9 @@ export default function TokenDetailScreen() {
             </Text>
           </View>
           <View style={styles.statCell}>
-            <Text style={styles.statLabel}>LP (SOL)</Text>
+            <Text style={styles.statLabel}>Liquidity</Text>
             <Text style={styles.statValue}>
-              {formatSOLValue(token.solInCurve)}
+              {overview?.liquidity ? `$${formatCompact(overview.liquidity)}` : '—'}
             </Text>
           </View>
           <View style={styles.statCell}>

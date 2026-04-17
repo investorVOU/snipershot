@@ -9,7 +9,8 @@ import {
   Image,
   Linking,
 } from 'react-native';
-import { useLocalSearchParams, useNavigation } from 'expo-router';
+import { useLocalSearchParams, useNavigation, router } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { fetchTokenByMint } from '../../services/pumpfun';
 import { fetchTokenOverview, TokenOverview } from '../../services/birdeye';
@@ -27,6 +28,32 @@ import {
   formatSOLValue,
 } from '../../utils/format';
 import type { FeedToken } from '../../hooks/useTokenFeed';
+
+function buildTokenContext(
+  token: FeedToken,
+  overview: TokenOverview | null,
+  rugFilter: RugFilterResult | null
+): string {
+  const lines = [
+    `Token: ${token.name} (${token.symbol})`,
+    `Mint: ${token.mint}`,
+    `Market Cap: ${overview?.marketCap ? `$${overview.marketCap.toFixed(0)}` : `$${token.usdMarketCap.toFixed(0)}`}`,
+    `Price: ${overview?.price ? `$${overview.price.toExponential(4)}` : 'unknown'}`,
+    `Volume 24h: ${overview?.volume24h ? `$${overview.volume24h.toFixed(0)}` : 'unknown'}`,
+    `Liquidity: ${overview?.liquidity ? `$${overview.liquidity.toFixed(0)}` : 'unknown'}`,
+    `Holders: ${overview?.holders ?? 'unknown'}`,
+    `1h Change: ${overview?.priceChange1h != null ? `${overview.priceChange1h.toFixed(2)}%` : 'unknown'}`,
+  ];
+  if (rugFilter) {
+    lines.push(`Rug Score: ${rugFilter.rugScore}/100`);
+    lines.push(`Rug Verdict: ${rugFilter.verdict}`);
+    rugFilter.breakdown.forEach((item) => {
+      lines.push(`  ${item.safe ? '✓' : '✗'} ${item.label}: ${item.detail}`);
+    });
+  }
+  if (token.description) lines.push(`Description: ${token.description}`);
+  return lines.join('\n');
+}
 
 export default function TokenDetailScreen() {
   const { mint } = useLocalSearchParams<{ mint: string }>();
@@ -267,7 +294,7 @@ export default function TokenDetailScreen() {
         <View style={{ height: 90 }} />
       </ScrollView>
 
-      {/* Fixed buy/sell buttons */}
+      {/* Fixed buy/sell/AI buttons */}
       <View style={styles.actionBar}>
         <TouchableOpacity
           style={[styles.actionBtn, styles.buyBtn]}
@@ -288,6 +315,20 @@ export default function TokenDetailScreen() {
           activeOpacity={0.8}
         >
           <Text style={styles.actionBtnText}>Sell</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionBtn, styles.aiBtn]}
+          onPress={() => {
+            const ctx = buildTokenContext(token, overview, rugFilter);
+            router.push({
+              pathname: '/token/chat',
+              params: { mint, tokenContext: ctx, tokenName: `${token.name} (${token.symbol})` },
+            });
+          }}
+          activeOpacity={0.8}
+        >
+          <Feather name="cpu" size={16} color="#9945ff" />
+          <Text style={styles.aiBtnText}>Ask AI</Text>
         </TouchableOpacity>
       </View>
 
@@ -494,6 +535,18 @@ const styles = StyleSheet.create({
   actionBtnText: {
     color: '#fff',
     fontSize: 16,
+    fontWeight: '700',
+  },
+  aiBtn: {
+    backgroundColor: '#9945ff22',
+    borderWidth: 1,
+    borderColor: '#9945ff66',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  aiBtnText: {
+    color: '#9945ff',
+    fontSize: 14,
     fontWeight: '700',
   },
 });

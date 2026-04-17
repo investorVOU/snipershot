@@ -3,6 +3,8 @@ import {
   detectNarrative,
   getAIRugVerdict,
   getPortfolioAdvice,
+  groqChat,
+  type GroqMessage,
   type NarrativeResult,
   type PortfolioAdvice,
   type RugVerdictResult,
@@ -71,4 +73,69 @@ export function usePortfolioAI() {
   }, []);
 
   return { advice, loading, analyze };
+}
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: number;
+}
+
+export function useTokenChat(tokenContext: string) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [loading, setLoading] = useState(false);
+  const historyRef = useRef<GroqMessage[]>([
+    {
+      role: "system",
+      content: `You are an expert Solana memecoin analyst and trading assistant. You have access to data about a specific token. Answer questions about this token concisely and helpfully. Always remind users that memecoins are extremely high-risk.\n\nToken context:\n${tokenContext}`,
+    },
+  ]);
+
+  const send = useCallback(async (userText: string) => {
+    const userMsg: ChatMessage = {
+      id: Date.now().toString(),
+      role: "user",
+      content: userText,
+      timestamp: Date.now(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+    historyRef.current.push({ role: "user", content: userText });
+
+    setLoading(true);
+    try {
+      const reply = await groqChat(historyRef.current, 512, 0.7);
+      historyRef.current.push({ role: "assistant", content: reply });
+      const assistantMsg: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        role: "assistant",
+        content: reply,
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
+    } catch (err) {
+      const rawMessage = err instanceof Error ? err.message : "Unable to reach the AI chat proxy.";
+      const message = /rate limit|429/i.test(rawMessage)
+        ? "Groq is rate-limiting the current account. Try again in a moment."
+        : rawMessage;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 1).toString(),
+          role: "assistant",
+          content: `Sorry, I couldn't process that. ${message}`,
+          timestamp: Date.now(),
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const reset = useCallback(() => {
+    setMessages([]);
+    historyRef.current = [historyRef.current[0]];
+  }, []);
+
+  return { messages, loading, send, reset };
 }

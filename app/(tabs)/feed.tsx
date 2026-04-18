@@ -144,7 +144,7 @@ export default function FeedScreen() {
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
           }
-          contentContainerStyle={{ paddingTop: 10, paddingBottom: botPad + 90 }}
+          contentContainerStyle={{ paddingTop: 8, paddingBottom: botPad + 90, paddingHorizontal: 12, gap: 8 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           windowSize={10}

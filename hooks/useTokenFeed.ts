@@ -10,24 +10,29 @@ import { watchCreatorWallet } from '../services/creatorMonitor';
 import { aiQueue } from '../services/aiQueue';
 
 function saveTokenToSupabase(token: PumpfunToken) {
-  void supabase.from('tokens').upsert({
-    mint: token.mint,
-    name: token.name,
-    symbol: token.symbol,
-    image_uri: token.imageUri ?? '',
-    description: token.description ?? '',
-    creator_address: token.creatorAddress ?? '',
-    market_cap: token.marketCap ?? 0,
-    usd_market_cap: token.usdMarketCap ?? 0,
-    sol_in_curve: token.solInCurve ?? 0,
-    complete: token.complete ?? false,
-    twitter_url: token.twitterUrl ?? '',
-    telegram_url: token.telegramUrl ?? '',
-    website_url: token.websiteUrl ?? '',
-    total_supply: token.totalSupply ?? 0,
-    created_timestamp: new Date(token.createdTimestamp).toISOString(),
-    first_seen_at: new Date().toISOString(),
-  }, { onConflict: 'mint' }).catch(() => {});
+  // Supabase query builder is PromiseLike but not a full Promise — use async IIFE
+  void (async () => {
+    try {
+      await supabase.from('tokens').upsert({
+        mint: token.mint,
+        name: token.name,
+        symbol: token.symbol,
+        image_uri: token.imageUri ?? '',
+        description: token.description ?? '',
+        creator_address: token.creatorAddress ?? '',
+        market_cap: token.marketCap ?? 0,
+        usd_market_cap: token.usdMarketCap ?? 0,
+        sol_in_curve: token.solInCurve ?? 0,
+        complete: token.complete ?? false,
+        twitter_url: token.twitterUrl ?? '',
+        telegram_url: token.telegramUrl ?? '',
+        website_url: token.websiteUrl ?? '',
+        total_supply: token.totalSupply ?? 0,
+        created_timestamp: new Date(token.createdTimestamp).toISOString(),
+        first_seen_at: new Date().toISOString(),
+      }, { onConflict: 'mint' });
+    } catch { /* ignore — non-critical background sync */ }
+  })();
 }
 
 export type FilterMode = 'all' | 'safe' | 'medium' | 'risky';

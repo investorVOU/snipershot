@@ -37,17 +37,23 @@ export function useWatchlist() {
   }, []);
 
   const syncWatchlistAdd = useCallback((token: WatchlistToken) => {
-    void supabase.from('watchlist').upsert({
-      mint: token.mint,
-      token_name: token.name,
-      token_symbol: token.symbol,
-      image_uri: token.imageUri ?? '',
-      added_at: new Date(token.addedAt).toISOString(),
-    }, { onConflict: 'mint' }).catch(() => {});
+    void (async () => {
+      try {
+        await supabase.from('watchlist').upsert({
+          mint: token.mint,
+          token_name: token.name,
+          token_symbol: token.symbol,
+          image_uri: token.imageUri ?? '',
+          added_at: new Date(token.addedAt).toISOString(),
+        }, { onConflict: 'mint' });
+      } catch {}
+    })();
   }, []);
 
   const syncWatchlistRemove = useCallback((mint: string) => {
-    void supabase.from('watchlist').delete().eq('mint', mint).catch(() => {});
+    void (async () => {
+      try { await supabase.from('watchlist').delete().eq('mint', mint); } catch {}
+    })();
   }, []);
 
   const addToWatchlist = useCallback((token: PumpfunToken) => {

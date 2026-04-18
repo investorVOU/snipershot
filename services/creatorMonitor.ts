@@ -110,10 +110,13 @@ async function handleAccountNotification(params: { result?: { value?: { data?: {
 
   // Update Supabase token record with rug flag
   if (event.isDump) {
-    void supabase.from('tokens')
-      .update({ creator_dumped: true, creator_dump_pct: percentSold, creator_dump_at: new Date().toISOString() })
-      .eq('mint', mint)
-      .catch(() => {});
+    void (async () => {
+      try {
+        await supabase.from('tokens')
+          .update({ creator_dumped: true, creator_dump_pct: percentSold, creator_dump_at: new Date().toISOString() })
+          .eq('mint', mint);
+      } catch {}
+    })();
   }
 
   // Fire all callbacks for this mint

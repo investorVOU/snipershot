@@ -31,6 +31,8 @@
     "expo-dev-client": "~5.0.12",
     "expo-font": "~14.0.10",
     "expo-haptics": "~15.0.8",
+    "expo-image": "~3.0.11",
+    "expo-image-picker": "~17.0.10",
     "expo-linking": "~8.0.10",
     "expo-local-authentication": "~15.0.2",
     "expo-notifications": "~0.30.0",

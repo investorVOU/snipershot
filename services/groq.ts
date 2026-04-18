@@ -1,4 +1,6 @@
-import { getApiBase } from "./api";
+const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
+// Fast model first for feed ratings; fall back to 70B for quality
+const GROQ_MODELS = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"];
 
 export interface GroqMessage {
   role: "system" | "user" | "assistant";
@@ -10,28 +12,33 @@ export async function groqChat(
   maxTokens = 512,
   temperature = 0.7
 ): Promise<string> {
-  const base = getApiBase();
-  const models = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"];
-  let lastError = "Unknown Groq proxy error";
+  const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
+  if (!apiKey || apiKey === "your_groq_api_key_here") {
+    throw new Error("EXPO_PUBLIC_GROQ_API_KEY not set in .env");
+  }
 
-  for (const model of models) {
-    const res = await fetch(`${base}/api/groq/chat`, {
+  let lastError = "Unknown error";
+  for (const model of GROQ_MODELS) {
+    const res = await fetch(GROQ_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages, model, max_tokens: maxTokens, temperature }),
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
     });
 
     if (!res.ok) {
-      lastError = await res.text();
-      if (res.status === 429) continue;
-      throw new Error(`Groq proxy error: ${lastError}`);
+      lastError = `${res.status}`;
+      if (res.status === 429) continue; // rate-limited, try next model
+      throw new Error(`Groq ${res.status}`);
     }
 
     const json = (await res.json()) as { choices: Array<{ message: { content: string } }> };
     return json.choices[0]?.message?.content ?? "";
   }
 
-  throw new Error(`Groq proxy error: ${lastError}`);
+  throw new Error(`Groq rate-limited on all models: ${lastError}`);
 }
 
 export interface RugVerdictResult {

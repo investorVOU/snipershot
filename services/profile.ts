@@ -1,3 +1,4 @@
+import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from './supabase';
 
@@ -21,7 +22,6 @@ export async function upsertProfile(userId: string, fields: Partial<Omit<UserPro
 }
 
 export async function pickAndUploadAvatar(userId: string): Promise<string | null> {
-  // Request permission
   const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!perm.granted) return null;
 
@@ -35,25 +35,24 @@ export async function pickAndUploadAvatar(userId: string): Promise<string | null
   if (result.canceled || !result.assets[0]) return null;
 
   const asset = result.assets[0];
-  const ext = asset.uri.split('.').pop() ?? 'jpg';
+  const ext = (asset.uri.split('.').pop() ?? 'jpg').toLowerCase();
+  const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
   const path = `avatars/${userId}.${ext}`;
 
-  // Read file as blob
-  const response = await fetch(asset.uri);
-  const blob = await response.blob();
-  const arrayBuffer = await blob.arrayBuffer();
+  // React Native Blob doesn't support .arrayBuffer() — read as base64 via FileSystem instead
+  const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+  const buffer = Buffer.from(base64, 'base64');
 
   const { error } = await supabase.storage
     .from('profiles')
-    .upload(path, arrayBuffer, {
-      contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`,
-      upsert: true,
-    });
+    .upload(path, buffer, { contentType: mime, upsert: true });
 
   if (error) throw new Error(error.message);
 
   const { data } = supabase.storage.from('profiles').getPublicUrl(path);
-  const publicUrl = data.publicUrl + `?t=${Date.now()}`; // cache-bust
+  const publicUrl = `${data.publicUrl}?t=${Date.now()}`;
 
   await upsertProfile(userId, { avatar_url: publicUrl });
   return publicUrl;

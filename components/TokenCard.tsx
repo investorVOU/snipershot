@@ -1,16 +1,17 @@
 import { Feather } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import React, { useState } from "react";
-import { Image, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { AIVerdictBadge } from "./AIVerdictBadge";
 import { AIVerdictModal } from "./AIVerdictModal";
 import { NarrativeTags } from "./NarrativeTags";
 import { RugScoreBadge } from "./RugScoreBadge";
-import { SparklineChart } from "./SparklineChart";
+import { Sparkline } from "./Sparkline";
 import { useColors } from "../hooks/useColors";
 import { useTokenVotes } from "../hooks/useTokenVotes";
 import type { FeedToken } from "../hooks/useTokenFeed";
 import type { AITokenRating } from "../services/groq";
-import { formatAge, formatCompact, formatSOLValue, toHttpUrl } from "../utils/format";
+import { formatAge, formatMarketCap, formatSOLFromSol, toHttpUrl } from "../utils/format";
 
 interface Props {
   token: FeedToken;
@@ -26,11 +27,19 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched, style }
   const [verdictModal, setVerdictModal] = useState<AITokenRating | null>(null);
   const { votes, vote } = useTokenVotes(token.mint);
 
-  const sparkColor = token.sparklineData && token.sparklineData.length >= 2
-    ? token.sparklineData[token.sparklineData.length - 1] >= token.sparklineData[0]
-      ? "#14f195"
-      : "#ef4444"
+  // Determine sparkline color from price direction
+  const sparkData = token.sparklineData ?? [];
+  const sparkColor = sparkData.length >= 2
+    ? sparkData[sparkData.length - 1] >= sparkData[0] ? "#14f195" : "#ef4444"
     : "#9945ff";
+
+  // Effective market cap — prefer usd, fall back to SOL-based
+  const mc = token.usdMarketCap > 0
+    ? token.usdMarketCap
+    : token.overview?.marketCap ?? 0;
+
+  // Effective liquidity — prefer Birdeye USD, fall back to bonding curve SOL display
+  const hasLiquidityUSD = (token.overview?.liquidity ?? 0) > 0;
 
   return (
     <>
@@ -39,48 +48,54 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched, style }
         onPress={onPress}
         activeOpacity={0.85}
       >
+        {/* ── Top row: avatar · name/stats · sparkline ── */}
         <View style={styles.row}>
-          {token.imageUri ? (
-            <Image source={{ uri: toHttpUrl(token.imageUri) }} style={styles.avatar} resizeMode="cover" />
-          ) : (
-            <View style={[styles.avatar, styles.avatarFallback, { backgroundColor: colors.muted }]}>
-              <Text style={[styles.avatarLetter, { color: colors.primary }]}>{token.symbol?.[0] ?? "?"}</Text>
-            </View>
-          )}
+          <Image
+            source={{ uri: toHttpUrl(token.imageUri) || undefined }}
+            style={styles.avatar}
+            contentFit="cover"
+            transition={200}
+            placeholder={{ thumbhash: undefined }}
+          />
+
           <View style={styles.info}>
             <View style={styles.nameRow}>
-              <Text style={[styles.name, { color: colors.foreground }]} numberOfLines={1}>{token.name}</Text>
-              <Text style={[styles.symbol, { color: colors.mutedForeground }]}>${token.symbol}</Text>
+              <Text style={[styles.name, { color: colors.foreground }]} numberOfLines={1}>
+                {token.name}
+              </Text>
+              <Text style={[styles.symbol, { color: colors.mutedForeground }]}>
+                ${token.symbol}
+              </Text>
             </View>
+
             <View style={styles.statsRow}>
-              <Text style={[styles.age, { color: colors.mutedForeground }]}>{formatAge(token.createdTimestamp)}</Text>
+              <Text style={[styles.age, { color: colors.mutedForeground }]}>
+                {formatAge(token.createdTimestamp)}
+              </Text>
+
               <View style={[styles.statPill, { backgroundColor: colors.muted }]}>
                 <Text style={[styles.statText, { color: colors.mutedForeground }]}>
-                  MC {token.usdMarketCap > 0
-                    ? `$${formatCompact(token.usdMarketCap)}`
-                    : token.marketCap > 0
-                    ? `${formatSOLValue(token.marketCap)} SOL`
-                    : "—"}
+                  MC {formatMarketCap(mc)}
                 </Text>
               </View>
+
               <View style={[styles.statPill, { backgroundColor: colors.muted }]}>
                 <Feather name="droplet" size={10} color={colors.mutedForeground} />
                 <Text style={[styles.statText, { color: colors.mutedForeground }]}>
-                  LP {token.overview?.liquidity
-                    ? `$${formatCompact(token.overview.liquidity)}`
-                    : token.solInCurve > 0
-                    ? `${formatSOLValue(token.solInCurve)} SOL`
-                    : "—"}
+                  {hasLiquidityUSD
+                    ? formatMarketCap(token.overview!.liquidity!)
+                    : `${formatSOLFromSol(token.solInCurve)} SOL`}
                 </Text>
               </View>
             </View>
           </View>
 
-          {token.sparklineData && token.sparklineData.length > 1 && (
-            <SparklineChart data={token.sparklineData} width={72} height={34} color={sparkColor} showGradient />
+          {sparkData.length > 1 && (
+            <Sparkline data={sparkData} width={72} height={34} color={sparkColor} showGradient />
           )}
         </View>
 
+        {/* ── Narrative tags (only after rug filter loads) ── */}
         {!token.rugFilterLoading && (
           <NarrativeTags
             mint={token.mint}
@@ -90,6 +105,7 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched, style }
           />
         )}
 
+        {/* ── Safety badges ── */}
         <View style={styles.badgeRow}>
           <RugScoreBadge rugFilter={token.rugFilter} loading={token.rugFilterLoading} size="small" />
           <AIVerdictBadge
@@ -101,10 +117,17 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched, style }
           />
         </View>
 
+        {/* ── Footer: votes · watch · snipe ── */}
         <View style={styles.footer}>
           <View style={styles.voteGroup}>
             <TouchableOpacity
-              style={[styles.voteBtn, { backgroundColor: votes?.userVote === "up" ? "#14f19522" : colors.muted, borderColor: votes?.userVote === "up" ? "#14f19555" : colors.border }]}
+              style={[
+                styles.voteBtn,
+                {
+                  backgroundColor: votes?.userVote === "up" ? "#14f19522" : colors.muted,
+                  borderColor: votes?.userVote === "up" ? "#14f19555" : colors.border,
+                },
+              ]}
               onPress={(e) => { e.stopPropagation(); void vote("up"); }}
             >
               <Feather name="thumbs-up" size={12} color={votes?.userVote === "up" ? "#14f195" : colors.mutedForeground} />
@@ -112,8 +135,15 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched, style }
                 {votes?.upvotes ?? 0}
               </Text>
             </TouchableOpacity>
+
             <TouchableOpacity
-              style={[styles.voteBtn, { backgroundColor: votes?.userVote === "down" ? "#ef444422" : colors.muted, borderColor: votes?.userVote === "down" ? "#ef444455" : colors.border }]}
+              style={[
+                styles.voteBtn,
+                {
+                  backgroundColor: votes?.userVote === "down" ? "#ef444422" : colors.muted,
+                  borderColor: votes?.userVote === "down" ? "#ef444455" : colors.border,
+                },
+              ]}
               onPress={(e) => { e.stopPropagation(); void vote("down"); }}
             >
               <Feather name="thumbs-down" size={12} color={votes?.userVote === "down" ? "#ef4444" : colors.mutedForeground} />
@@ -122,14 +152,22 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched, style }
               </Text>
             </TouchableOpacity>
           </View>
+
           {onWatch && (
             <TouchableOpacity
-              style={[styles.watchBtn, { backgroundColor: isWatched ? "#9945ff22" : colors.muted, borderColor: isWatched ? "#9945ff55" : colors.border }]}
+              style={[
+                styles.watchBtn,
+                {
+                  backgroundColor: isWatched ? "#9945ff22" : colors.muted,
+                  borderColor: isWatched ? "#9945ff55" : colors.border,
+                },
+              ]}
               onPress={(e) => { e.stopPropagation(); onWatch(); }}
             >
               <Feather name="star" size={13} color={isWatched ? "#9945ff" : colors.mutedForeground} />
             </TouchableOpacity>
           )}
+
           <TouchableOpacity
             style={[styles.snipeBtn, { backgroundColor: colors.primary }]}
             onPress={(e) => { e.stopPropagation(); onSnipe(); }}
@@ -153,21 +191,25 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched, style }
 const styles = StyleSheet.create({
   card: { borderRadius: 14, padding: 14, gap: 10 },
   row: { flexDirection: "row", alignItems: "center", gap: 12 },
-  avatar: { width: 48, height: 48, borderRadius: 24 },
-  avatarFallback: { justifyContent: "center", alignItems: "center" },
-  avatarLetter: { fontSize: 18, fontWeight: "700" },
+  avatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#1a1a2e" },
   info: { flex: 1, gap: 4 },
   nameRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   name: { fontSize: 15, fontWeight: "700", flexShrink: 1 },
   symbol: { fontSize: 12, fontWeight: "600" },
   statsRow: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
   age: { fontSize: 11, fontWeight: "500" },
-  statPill: { flexDirection: "row", alignItems: "center", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, gap: 3 },
+  statPill: {
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, gap: 3,
+  },
   statText: { fontSize: 10, fontWeight: "600" },
   badgeRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
   footer: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   voteGroup: { flexDirection: "row", alignItems: "center", gap: 8 },
-  voteBtn: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 8, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 7 },
+  voteBtn: {
+    flexDirection: "row", alignItems: "center", gap: 5,
+    borderRadius: 8, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 7,
+  },
   voteText: { fontSize: 12, fontWeight: "700" },
   watchBtn: { width: 32, height: 32, borderRadius: 8, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   snipeBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 7, borderRadius: 8, gap: 5 },

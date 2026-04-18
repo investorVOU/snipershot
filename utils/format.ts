@@ -55,6 +55,20 @@ export function lamportsToSol(lamports: number): number {
   return lamports / 1_000_000_000;
 }
 
+/** Format market cap: $1.23M / $456K / $789 */
+export function formatMarketCap(value: number): string {
+  if (!value || value <= 0) return '—';
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(2)}M`;
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(1)}K`;
+  return `$${value.toFixed(0)}`;
+}
+
+/** Format SOL from a raw SOL float (4dp) */
+export function formatSOLFromSol(sol: number): string {
+  if (!sol || sol <= 0) return '0.0000';
+  return sol.toFixed(4);
+}
+
 const IPFS_GATEWAY = 'https://ipfs.io/ipfs/';
 
 /** Convert ipfs:// or /ipfs/<hash> URIs to an HTTP gateway URL React Native can load */

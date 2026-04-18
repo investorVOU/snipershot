@@ -10,7 +10,7 @@ import { useColors } from "../hooks/useColors";
 import { useTokenVotes } from "../hooks/useTokenVotes";
 import type { FeedToken } from "../hooks/useTokenFeed";
 import type { AITokenRating } from "../services/groq";
-import { formatAge, formatCompact, formatSOLValue } from "../utils/format";
+import { formatAge, formatCompact, formatSOLValue, toHttpUrl } from "../utils/format";
 
 interface Props {
   token: FeedToken;
@@ -41,7 +41,7 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched, style }
       >
         <View style={styles.row}>
           {token.imageUri ? (
-            <Image source={{ uri: token.imageUri }} style={styles.avatar} resizeMode="cover" />
+            <Image source={{ uri: toHttpUrl(token.imageUri) }} style={styles.avatar} resizeMode="cover" />
           ) : (
             <View style={[styles.avatar, styles.avatarFallback, { backgroundColor: colors.muted }]}>
               <Text style={[styles.avatarLetter, { color: colors.primary }]}>{token.symbol?.[0] ?? "?"}</Text>

@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { PUMPFUN_API } from '../constants/programs';
+import { toHttpUrl } from '../utils/format';
 
 export interface PumpfunToken {
   mint: string;
@@ -76,7 +77,7 @@ function mapCoin(coin: PumpfunApiCoin): PumpfunToken {
     mint: coin.mint,
     name: coin.name ?? 'Unknown',
     symbol: coin.symbol ?? '???',
-    imageUri: coin.image_uri ?? '',
+    imageUri: toHttpUrl(coin.image_uri ?? ''),
     description: coin.description ?? '',
     creatorAddress: coin.creator ?? '',
     createdTimestamp: coin.created_timestamp * 1000,
@@ -124,7 +125,7 @@ async function fetchMetaFromUri(url: string): Promise<MetaResult | null> {
     clearTimeout(timer);
     if (!res.ok) return null;
     const json = await res.json() as Record<string, string>;
-    const imageUri = json.image ?? json.imageUri ?? json.logo ?? '';
+    const imageUri = toHttpUrl(json.image ?? json.imageUri ?? json.logo ?? '');
     if (!imageUri && !json.description) return null;
     return {
       imageUri,

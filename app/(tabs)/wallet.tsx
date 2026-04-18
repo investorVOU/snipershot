@@ -18,10 +18,12 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
+import { Image } from 'react-native';
 import { useColors } from '../../hooks/useColors';
 import { useWallet } from '../../hooks/useWallet';
 import { fetchSOLPrice } from '../../services/birdeye';
 import { exportWalletKey } from '../../services/embeddedWallet';
+import { getProfile, pickAndUploadAvatar } from '../../services/profile';
 import { supabase } from '../../services/supabase';
 import { formatSOLValue, formatUSD, truncateAddress } from '../../utils/format';
 
@@ -30,6 +32,8 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const wallet = useWallet();
   const [solUSDPrice, setSolUSDPrice] = useState(0);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarLoading, setAvatarLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [withdrawAddress, setWithdrawAddress] = useState('');
@@ -44,6 +48,33 @@ export default function ProfileScreen() {
     fetchSOLPrice().then(setSolUSDPrice).catch(() => {});
     const interval = setInterval(() => fetchSOLPrice().then(setSolUSDPrice).catch(() => {}), 60_000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Load profile avatar
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      const uid = data.session?.user?.id;
+      if (!uid) return;
+      getProfile(uid).then((p) => { if (p?.avatar_url) setAvatarUrl(p.avatar_url); }).catch(() => {});
+    });
+  }, []);
+
+  const handleAvatarPress = useCallback(async () => {
+    const { data } = await supabase.auth.getSession();
+    const uid = data.session?.user?.id;
+    if (!uid) {
+      Toast.show({ type: 'info', text1: 'Sign in to set a profile picture' });
+      return;
+    }
+    setAvatarLoading(true);
+    try {
+      const url = await pickAndUploadAvatar(uid);
+      if (url) setAvatarUrl(url);
+    } catch (e: unknown) {
+      Toast.show({ type: 'error', text1: 'Upload failed', text2: e instanceof Error ? e.message : 'Try again' });
+    } finally {
+      setAvatarLoading(false);
+    }
   }, []);
 
   const handleCopy = useCallback(async () => {
@@ -176,9 +207,20 @@ export default function ProfileScreen() {
 
         {/* Balance card */}
         <View style={[styles.balanceCard, { backgroundColor: colors.card, borderColor: '#9945ff44' }]}>
-          <View style={[styles.avatarCircle, { backgroundColor: '#9945ff22', borderColor: '#9945ff55' }]}>
-            <Feather name="user" size={28} color="#9945ff" />
-          </View>
+          <TouchableOpacity onPress={handleAvatarPress} style={styles.avatarWrapper} activeOpacity={0.8}>
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+            ) : (
+              <View style={[styles.avatarCircle, { backgroundColor: '#9945ff22', borderColor: '#9945ff55' }]}>
+                <Feather name="user" size={28} color="#9945ff" />
+              </View>
+            )}
+            <View style={styles.avatarEditBadge}>
+              {avatarLoading
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Feather name="camera" size={12} color="#fff" />}
+            </View>
+          </TouchableOpacity>
           <Text style={[styles.balanceLabel, { color: colors.mutedForeground }]}>SOL Balance</Text>
           <Text style={[styles.balanceSOL, { color: colors.foreground }]}>{formatSOLValue(solBalance)} SOL</Text>
           <Text style={[styles.balanceUSD, { color: colors.green }]}>{formatUSD(usdValue)}</Text>
@@ -336,7 +378,10 @@ const styles = StyleSheet.create({
   screenTitle: { fontSize: 22, fontWeight: '800' },
   settingsBtn: { padding: 8, borderRadius: 10, borderWidth: 1 },
   balanceCard: { borderRadius: 20, padding: 24, alignItems: 'center', marginBottom: 14, borderWidth: 1, gap: 4 },
-  avatarCircle: { width: 64, height: 64, borderRadius: 32, borderWidth: 2, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
+  avatarWrapper: { position: 'relative', marginBottom: 8 },
+  avatarCircle: { width: 72, height: 72, borderRadius: 36, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
+  avatarImage: { width: 72, height: 72, borderRadius: 36, borderWidth: 2, borderColor: '#9945ff55' },
+  avatarEditBadge: { position: 'absolute', bottom: 0, right: 0, width: 22, height: 22, borderRadius: 11, backgroundColor: '#9945ff', justifyContent: 'center', alignItems: 'center', borderWidth: 1.5, borderColor: '#0a0a0f' },
   balanceLabel: { fontSize: 13 },
   balanceSOL: { fontSize: 34, fontWeight: '800', letterSpacing: -0.5 },
   balanceUSD: { fontSize: 18, fontWeight: '600' },

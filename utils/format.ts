@@ -55,6 +55,17 @@ export function lamportsToSol(lamports: number): number {
   return lamports / 1_000_000_000;
 }
 
+const IPFS_GATEWAY = 'https://ipfs.io/ipfs/';
+
+/** Convert ipfs:// or /ipfs/<hash> URIs to an HTTP gateway URL React Native can load */
+export function toHttpUrl(uri: string): string {
+  if (!uri) return '';
+  if (uri.startsWith('ipfs://')) return IPFS_GATEWAY + uri.slice(7);
+  const match = uri.match(/\/ipfs\/(Qm\w{40,}|bafy\w+)/);
+  if (match) return IPFS_GATEWAY + match[1];
+  return uri;
+}
+
 /** Format a price with appropriate decimal places */
 export function formatPrice(price: number): string {
   if (price === 0) return '$0.00';

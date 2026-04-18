@@ -1,10 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  process.env.EXPO_PUBLIC_SUPABASE_URL ?? '',
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? ''
-);
+import { supabase } from './supabase';
 
 const TRADES_KEY = 'snapshot_trades';
 const POSITIONS_KEY = 'snapshot_positions';
@@ -104,11 +99,24 @@ export async function openPosition(position: Position): Promise<void> {
   try {
     const raw = await AsyncStorage.getItem(POSITIONS_KEY);
     const positions: Position[] = raw ? JSON.parse(raw) : [];
-    // Remove any existing position for same mint
     const filtered = positions.filter((p) => p.mint !== position.mint);
     filtered.unshift(position);
     await AsyncStorage.setItem(POSITIONS_KEY, JSON.stringify(filtered));
   } catch {}
+
+  void supabase.from('positions').upsert({
+    mint: position.mint,
+    user_pubkey: position.tradeId,
+    token_name: position.tokenName,
+    token_symbol: position.tokenSymbol,
+    image_uri: position.imageUri,
+    entry_price_sol: position.entryPriceSOL,
+    amount_tokens: position.amountTokens,
+    amount_sol_spent: position.amountSOLSpent,
+    opened_at: new Date(position.openedAt).toISOString(),
+    trade_id: position.tradeId,
+    closed: false,
+  }, { onConflict: 'mint,trade_id' }).catch(() => {});
 }
 
 /** Close a position by mint */
@@ -119,6 +127,11 @@ export async function closePosition(mint: string): Promise<void> {
     const filtered = positions.filter((p) => p.mint !== mint);
     await AsyncStorage.setItem(POSITIONS_KEY, JSON.stringify(filtered));
   } catch {}
+
+  void supabase.from('positions')
+    .update({ closed: true, closed_at: new Date().toISOString() })
+    .eq('mint', mint)
+    .catch(() => {});
 }
 
 /** Get all open positions */

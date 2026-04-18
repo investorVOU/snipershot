@@ -21,6 +21,8 @@ import Toast from 'react-native-toast-message';
 import { useColors } from '../../hooks/useColors';
 import { useWallet } from '../../hooks/useWallet';
 import { fetchSOLPrice } from '../../services/birdeye';
+import { exportWalletKey } from '../../services/embeddedWallet';
+import { supabase } from '../../services/supabase';
 import { formatSOLValue, formatUSD, truncateAddress } from '../../utils/format';
 
 export default function ProfileScreen() {
@@ -56,28 +58,54 @@ export default function ProfileScreen() {
   }, [address]);
 
   const handleExportKey = useCallback(async () => {
+    // Step 1: biometric / passcode gate
     const hasHardware = await LocalAuthentication.hasHardwareAsync();
     const isEnrolled = await LocalAuthentication.isEnrolledAsync();
     if (hasHardware && isEnrolled) {
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Authenticate to export private key',
+        promptMessage: 'Authenticate to view private key',
         fallbackLabel: 'Use Passcode',
+        cancelLabel: 'Cancel',
       });
       if (!result.success) {
-        Toast.show({ type: 'error', text1: 'Authentication failed' });
+        Toast.show({ type: 'error', text1: 'Authentication cancelled' });
         return;
       }
     }
+
+    // Step 2: fetch the actual key
     setIsExporting(true);
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData.session?.user?.id;
+      if (!userId) {
+        Toast.show({ type: 'error', text1: 'Not logged in', text2: 'Guest wallets are ephemeral — sign in to export.' });
+        return;
+      }
+
+      const privateKey = await exportWalletKey(userId);
+      if (!privateKey) {
+        Toast.show({ type: 'error', text1: 'Key not found on this device', text2: 'Re-login to restore your wallet.' });
+        return;
+      }
+
+      // Step 3: show the key with a copy option
       Alert.alert(
-        'Export Private Key',
-        'Your private key will be shown once. Store it securely — anyone with this key controls your wallet.',
+        '⚠️ Private Key',
+        `${privateKey}\n\nStore this somewhere safe. Anyone with this key controls your wallet.`,
         [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Show Key', style: 'destructive', onPress: () => Toast.show({ type: 'info', text1: 'Use the Privy export flow in settings' }) },
+          {
+            text: 'Copy & Close',
+            onPress: async () => {
+              await Clipboard.setStringAsync(privateKey);
+              Toast.show({ type: 'success', text1: 'Private key copied', text2: 'Store it in a password manager.' });
+            },
+          },
+          { text: 'Close', style: 'cancel' },
         ]
       );
+    } catch {
+      Toast.show({ type: 'error', text1: 'Export failed', text2: 'Try again' });
     } finally {
       setIsExporting(false);
     }

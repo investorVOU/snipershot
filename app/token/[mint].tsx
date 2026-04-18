@@ -16,11 +16,13 @@ import { fetchTokenByMint } from '../../services/pumpfun';
 import { fetchTokenOverview, TokenOverview } from '../../services/birdeye';
 import { runRugFilter, RugFilterResult } from '../../services/rugFilter';
 import { getAssetMetadata } from '../../services/helius';
+import { AIRatingCard } from '../../components/AIVerdictBadge';
 import { PriceChart } from '../../components/PriceChart';
 import { RugScoreBadge } from '../../components/RugScoreBadge';
 import { SnipeSheet } from '../../components/SnipeSheet';
 import { useWallet } from '../../hooks/useWallet';
 import { useSniper } from '../../hooks/useSniper';
+import { useAITokenRating } from '../../hooks/useAI';
 import {
   formatCompact,
   formatPercent,
@@ -61,6 +63,7 @@ export default function TokenDetailScreen() {
   const wallet = useWallet();
   const sniper = useSniper(wallet.publicKey, wallet.signTransaction);
 
+  const { rate: rateToken } = useAITokenRating();
   const [token, setToken] = useState<FeedToken | null>(null);
   const [overview, setOverview] = useState<TokenOverview | null>(null);
   const [rugFilter, setRugFilter] = useState<RugFilterResult | null>(null);
@@ -99,6 +102,10 @@ export default function TokenDetailScreen() {
         overview: null,
         sparklineData: [],
         isNewest: false,
+        aiRating: null,
+        aiRatingLoading: true,
+        creatorDumped: false,
+        creatorDumpPct: 0,
       };
 
       setToken(feedToken);
@@ -110,6 +117,27 @@ export default function TokenDetailScreen() {
       const rf = await runRugFilter(mint, feedToken.creatorAddress);
       setRugFilter(rf);
       setToken((prev) => prev ? { ...prev, rugFilter: rf, rugFilterLoading: false } : prev);
+
+      // Run AI rating after rug filter
+      void rateToken(mint, {
+        name: feedToken.name,
+        symbol: feedToken.symbol,
+        description: feedToken.description ?? '',
+        rugScore: rf.rugScore,
+        mintAuthorityRevoked: rf.mintAuthorityRevoked,
+        freezeAuthorityRevoked: rf.freezeAuthorityRevoked,
+        lpLocked: rf.lpLocked,
+        top10HolderPercent: rf.top10HolderPercent,
+        creatorSoldAll: rf.creatorSoldAll,
+        solInBondingCurve: feedToken.solInCurve,
+        usdMarketCap: feedToken.usdMarketCap,
+        liquidity: ov?.liquidity,
+        volume24h: ov?.volume24h,
+        holders: ov?.holders,
+        priceChange1h: ov?.priceChange1h,
+      }).then((aiRating) => {
+        setToken((prev) => prev ? { ...prev, aiRating: aiRating ?? null, aiRatingLoading: false } : prev);
+      });
     } catch {
       // silently fail
     } finally {
@@ -230,6 +258,14 @@ export default function TokenDetailScreen() {
             <Text style={styles.description}>{token.description}</Text>
           </View>
         ) : null}
+
+        {/* AI Rating */}
+        <AIRatingCard
+          aiRating={token.aiRating ?? null}
+          aiRatingLoading={token.aiRatingLoading ?? false}
+          creatorDumped={token.creatorDumped}
+          creatorDumpPct={token.creatorDumpPct}
+        />
 
         {/* Rug filter */}
         {rugFilter && (

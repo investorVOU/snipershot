@@ -9,7 +9,7 @@ import { SparklineChart } from "./SparklineChart";
 import { useColors } from "../hooks/useColors";
 import { useTokenVotes } from "../hooks/useTokenVotes";
 import type { FeedToken } from "../hooks/useTokenFeed";
-import type { RugVerdictResult } from "../services/groq";
+import type { AITokenRating } from "../services/groq";
 import { formatAge, formatCompact, formatSOLValue } from "../utils/format";
 
 interface Props {
@@ -23,7 +23,7 @@ interface Props {
 
 export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched, style }: Props) {
   const colors = useColors();
-  const [verdictModal, setVerdictModal] = useState<RugVerdictResult | null>(null);
+  const [verdictModal, setVerdictModal] = useState<AITokenRating | null>(null);
   const { votes, vote } = useTokenVotes(token.mint);
 
   const sparkColor = token.sparklineData && token.sparklineData.length >= 2
@@ -84,18 +84,13 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched, style }
 
         <View style={styles.badgeRow}>
           <RugScoreBadge rugFilter={token.rugFilter} loading={token.rugFilterLoading} size="small" />
-          {!token.rugFilterLoading && token.rugFilter && (
-            <AIVerdictBadge
-              mint={token.mint}
-              tokenName={token.name}
-              tokenSymbol={token.symbol}
-              rugFilter={token.rugFilter}
-              rugLoading={token.rugFilterLoading}
-              solInBondingCurve={token.solInCurve}
-              usdMarketCap={token.usdMarketCap}
-              onPress={(v) => setVerdictModal(v)}
-            />
-          )}
+          <AIVerdictBadge
+            aiRating={token.aiRating ?? null}
+            aiRatingLoading={token.aiRatingLoading ?? false}
+            creatorDumped={token.creatorDumped}
+            creatorDumpPct={token.creatorDumpPct}
+            onPress={(v) => setVerdictModal(v)}
+          />
         </View>
 
         <View style={styles.footer}>

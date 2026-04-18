@@ -5,6 +5,9 @@ import { runRugFilter, RugFilterResult } from '../services/rugFilter';
 import { fetchTokenOverview, fetchOHLCV, TokenOverview } from '../services/birdeye';
 import { hapticNewSafeToken } from '../services/haptics';
 import { supabase } from '../services/supabase';
+import { getAITokenRating, type AITokenRating } from '../services/groq';
+import { watchCreatorWallet } from '../services/creatorMonitor';
+import { aiQueue } from '../services/aiQueue';
 
 function saveTokenToSupabase(token: PumpfunToken) {
   void supabase.from('tokens').upsert({
@@ -35,6 +38,10 @@ export interface FeedToken extends PumpfunToken {
   overview: TokenOverview | null;
   sparklineData: number[];
   isNewest: boolean;
+  aiRating: AITokenRating | null;
+  aiRatingLoading: boolean;
+  creatorDumped: boolean;
+  creatorDumpPct: number;
 }
 
 const MAX_FEED_SIZE = 100;
@@ -51,7 +58,7 @@ async function loadCache(): Promise<FeedToken[]> {
     if (!raw) return [];
     const items: FeedToken[] = JSON.parse(raw);
     // Restore with safe defaults so nothing appears "loading"
-    return items.map((t) => ({ ...t, isNewest: false, rugFilterLoading: false }));
+    return items.map((t) => ({ ...t, isNewest: false, rugFilterLoading: false, aiRatingLoading: false, creatorDumped: t.creatorDumped ?? false, creatorDumpPct: t.creatorDumpPct ?? 0, aiRating: t.aiRating ?? null }));
   } catch {
     return [];
   }
@@ -140,6 +147,10 @@ export function useTokenFeed() {
         overview: null,
         sparklineData: [],
         isNewest: true,
+        aiRating: null,
+        aiRatingLoading: true,
+        creatorDumped: false,
+        creatorDumpPct: 0,
       };
       const cleared = prev.map((t) => (t.isNewest ? { ...t, isNewest: false } : t));
       return [feedToken, ...cleared].slice(0, MAX_FEED_SIZE);
@@ -165,6 +176,46 @@ export function useTokenFeed() {
               : t
           )
         );
+
+        // Run AI rating after rug filter (needs rug data)
+        void aiQueue.enqueue(() => getAITokenRating({
+          name: newToken.name,
+          symbol: newToken.symbol,
+          description: newToken.description ?? '',
+          rugScore: rugResult.rugScore,
+          mintAuthorityRevoked: rugResult.mintAuthorityRevoked,
+          freezeAuthorityRevoked: rugResult.freezeAuthorityRevoked,
+          lpLocked: rugResult.lpLocked,
+          top10HolderPercent: rugResult.top10HolderPercent,
+          creatorSoldAll: rugResult.creatorSoldAll,
+          solInBondingCurve: newToken.solInCurve,
+          usdMarketCap: newToken.usdMarketCap,
+          liquidity: overview?.liquidity,
+          volume24h: overview?.volume24h,
+          holders: overview?.holders,
+          priceChange1h: overview?.priceChange1h,
+        })).then((aiRating) => {
+          setTokens((prev) =>
+            prev.map((t) => t.mint === newToken.mint ? { ...t, aiRating, aiRatingLoading: false } : t)
+          );
+        }).catch(() => {
+          setTokens((prev) =>
+            prev.map((t) => t.mint === newToken.mint ? { ...t, aiRatingLoading: false } : t)
+          );
+        });
+
+        // Start monitoring creator wallet for dumps
+        if (newToken.creatorAddress) {
+          void watchCreatorWallet(newToken.mint, newToken.creatorAddress, (sellEvent) => {
+            setTokens((prev) =>
+              prev.map((t) =>
+                t.mint === newToken.mint
+                  ? { ...t, creatorDumped: sellEvent.isDump, creatorDumpPct: sellEvent.percentSold }
+                  : t
+              )
+            );
+          });
+        }
       })
       .catch(() => {
         setTokens((prev) =>

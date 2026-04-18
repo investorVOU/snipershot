@@ -86,6 +86,92 @@ Respond ONLY with valid JSON in this exact format:
   }
 }
 
+export interface AITokenRating {
+  score: number;           // 0–100 composite AI score (higher = safer/better opportunity)
+  grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  verdict: 'GEM' | 'WATCH' | 'RISKY' | 'RUG';
+  signal: 'BUY' | 'HOLD' | 'SKIP' | 'SELL';
+  confidence: number;      // 0–100
+  reason: string;          // one sentence
+  flags: string[];         // positive/negative flags e.g. ['Mint revoked', 'Low LP', 'Whale concentration']
+}
+
+export async function getAITokenRating(token: {
+  name: string;
+  symbol: string;
+  description: string;
+  rugScore: number;
+  mintAuthorityRevoked: boolean;
+  freezeAuthorityRevoked: boolean;
+  lpLocked: boolean;
+  top10HolderPercent: number;
+  creatorSoldAll: boolean;
+  solInBondingCurve: number;
+  usdMarketCap?: number;
+  liquidity?: number;
+  volume24h?: number;
+  holders?: number;
+  priceChange1h?: number;
+  narratives?: string[];
+}): Promise<AITokenRating> {
+  const prompt = `You are an expert Solana memecoin analyst. Rate this token comprehensively.
+
+Token: ${token.name} (${token.symbol})
+Description: ${token.description || 'none'}
+${token.narratives?.length ? `Narratives: ${token.narratives.join(', ')}` : ''}
+
+On-chain safety:
+- Rug Score: ${token.rugScore}/100 (lower = safer)
+- Mint Authority Revoked: ${token.mintAuthorityRevoked}
+- Freeze Authority Revoked: ${token.freezeAuthorityRevoked}
+- LP Locked: ${token.lpLocked}
+- Top 10 Holders: ${token.top10HolderPercent.toFixed(1)}%
+- Creator Sold All: ${token.creatorSoldAll}
+- Bonding Curve SOL: ${token.solInBondingCurve.toFixed(4)}
+
+Market data:
+- Market Cap: ${token.usdMarketCap ? `$${token.usdMarketCap.toFixed(0)}` : 'unknown'}
+- Liquidity: ${token.liquidity ? `$${token.liquidity.toFixed(0)}` : 'unknown'}
+- Volume 24h: ${token.volume24h ? `$${token.volume24h.toFixed(0)}` : 'unknown'}
+- Holders: ${token.holders ?? 'unknown'}
+- 1h Price Change: ${token.priceChange1h != null ? `${token.priceChange1h.toFixed(2)}%` : 'unknown'}
+
+Score the token 0-100 where:
+- 80-100 = potential gem with strong fundamentals
+- 60-79 = worth watching, some risk
+- 40-59 = risky, significant red flags
+- 20-39 = likely rug or scam
+- 0-19 = confirmed rug signals
+
+Respond ONLY with valid JSON:
+{
+  "score": 0-100,
+  "grade": "A" | "B" | "C" | "D" | "F",
+  "verdict": "GEM" | "WATCH" | "RISKY" | "RUG",
+  "signal": "BUY" | "HOLD" | "SKIP" | "SELL",
+  "confidence": 0-100,
+  "reason": "one sentence max 15 words",
+  "flags": ["up to 4 short flag strings"]
+}`;
+
+  try {
+    const raw = await groqChat([{ role: 'user', content: prompt }], 300, 0.3);
+    const json = JSON.parse(raw.trim()) as AITokenRating;
+    return json;
+  } catch {
+    const score = Math.max(0, 100 - token.rugScore);
+    return {
+      score,
+      grade: score >= 80 ? 'A' : score >= 60 ? 'B' : score >= 40 ? 'C' : score >= 20 ? 'D' : 'F',
+      verdict: score >= 70 ? 'WATCH' : score >= 40 ? 'RISKY' : 'RUG',
+      signal: score >= 70 ? 'HOLD' : 'SKIP',
+      confidence: 50,
+      reason: 'AI analysis unavailable, score estimated from rug filter',
+      flags: [],
+    };
+  }
+}
+
 export interface NarrativeResult {
   narratives: string[];
   hype: "LOW" | "MEDIUM" | "HIGH" | "EXTREME";

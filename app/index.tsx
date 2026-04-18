@@ -18,12 +18,13 @@ export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const [connecting, setConnecting] = useState<string | null>(null);
 
-  // Already connected → go straight to feed
+  // Auto-redirect only for real Privy sessions (email/google) — not guest
+  // Guest users always see the login screen so they can choose their auth method
   useEffect(() => {
-    if (wallet.connected && !wallet.isLoading) {
+    if (wallet.connected && !wallet.isLoading && wallet.authMethod !== 'guest') {
       router.replace('/(tabs)/feed');
     }
-  }, [wallet.connected, wallet.isLoading]);
+  }, [wallet.connected, wallet.isLoading, wallet.authMethod]);
 
   const handleConnect = async (method: 'email' | 'google' | 'guest') => {
     setConnecting(method);

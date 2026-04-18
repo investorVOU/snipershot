@@ -2,8 +2,10 @@ import { useCallback, useRef, useState } from "react";
 import {
   detectNarrative,
   getAIRugVerdict,
+  getAITokenRating,
   getPortfolioAdvice,
   groqChat,
+  type AITokenRating,
   type GroqMessage,
   type NarrativeResult,
   type PortfolioAdvice,
@@ -53,6 +55,30 @@ export function useNarrativeDetector() {
   );
 
   return { detect };
+}
+
+export function useAITokenRating() {
+  const cache = useRef<Map<string, AITokenRating>>(new Map());
+  const [loading, setLoading] = useState(false);
+
+  const rate = useCallback(async (
+    mint: string,
+    token: Parameters<typeof getAITokenRating>[0]
+  ): Promise<AITokenRating | null> => {
+    if (cache.current.has(mint)) return cache.current.get(mint)!;
+    setLoading(true);
+    try {
+      const result = await aiQueue.enqueue(() => getAITokenRating(token));
+      cache.current.set(mint, result);
+      return result;
+    } catch {
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  return { rate, loading };
 }
 
 export function usePortfolioAI() {

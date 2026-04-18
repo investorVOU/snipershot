@@ -4,6 +4,28 @@ import { PumpfunToken, subscribePumpPortal } from '../services/pumpfun';
 import { runRugFilter, RugFilterResult } from '../services/rugFilter';
 import { fetchTokenOverview, fetchOHLCV, TokenOverview } from '../services/birdeye';
 import { hapticNewSafeToken } from '../services/haptics';
+import { supabase } from '../services/supabase';
+
+function saveTokenToSupabase(token: PumpfunToken) {
+  void supabase.from('tokens').upsert({
+    mint: token.mint,
+    name: token.name,
+    symbol: token.symbol,
+    image_uri: token.imageUri ?? '',
+    description: token.description ?? '',
+    creator_address: token.creatorAddress ?? '',
+    market_cap: token.marketCap ?? 0,
+    usd_market_cap: token.usdMarketCap ?? 0,
+    sol_in_curve: token.solInCurve ?? 0,
+    complete: token.complete ?? false,
+    twitter_url: token.twitterUrl ?? '',
+    telegram_url: token.telegramUrl ?? '',
+    website_url: token.websiteUrl ?? '',
+    total_supply: token.totalSupply ?? 0,
+    created_timestamp: new Date(token.createdTimestamp).toISOString(),
+    first_seen_at: new Date().toISOString(),
+  }, { onConflict: 'mint' }).catch(() => {});
+}
 
 export type FilterMode = 'all' | 'safe' | 'medium' | 'risky';
 
@@ -122,6 +144,8 @@ export function useTokenFeed() {
       const cleared = prev.map((t) => (t.isNewest ? { ...t, isNewest: false } : t));
       return [feedToken, ...cleared].slice(0, MAX_FEED_SIZE);
     });
+
+    saveTokenToSupabase(newToken);
 
     if (rugFilterQueue.current.has(newToken.mint)) return;
     rugFilterQueue.current.add(newToken.mint);

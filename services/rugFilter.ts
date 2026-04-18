@@ -42,105 +42,79 @@ export async function runRugFilter(
     creatorBalance = await getTokenAccountBalance(creatorAddress, mint);
   }
 
+  // If mintInfo is null (API failed), treat mint/freeze as unknown — don't penalize
+  const hasMintData = mintInfo !== null;
   const mintAuthorityRevoked = mintInfo?.mintAuthorityRevoked ?? false;
   const freezeAuthorityRevoked = mintInfo?.freezeAuthorityRevoked ?? false;
+
+  // If securityInfo is empty (API failed/token too new), treat LP/holders as unknown
+  const hasSecurityData = Object.keys(securityInfo).length > 0;
   const lpLocked = securityInfo.lpLocked ?? false;
   const top10HolderPercent = securityInfo.top10HolderPercent ?? 0;
-  const creatorSoldAll = creatorBalance === 0;
+
+  // Only flag creator sold if we have a valid creator address and confirmed balance
+  const creatorSoldAll = !!creatorAddress && creatorBalance === 0;
 
   let rugScore = 0;
   const breakdown: RugBreakdownItem[] = [];
 
   // Mint authority
-  if (!mintAuthorityRevoked) {
+  if (!hasMintData) {
+    breakdown.push({ label: 'Mint Authority', safe: true, score: 0, detail: 'On-chain data loading…' });
+  } else if (!mintAuthorityRevoked) {
     rugScore += SCORE_MINT_NOT_REVOKED;
-    breakdown.push({
-      label: 'Mint Authority',
-      safe: false,
-      score: SCORE_MINT_NOT_REVOKED,
-      detail: 'Mint authority not revoked — creator can mint more tokens',
-    });
+    breakdown.push({ label: 'Mint Authority', safe: false, score: SCORE_MINT_NOT_REVOKED, detail: 'Mint authority not revoked — creator can mint more tokens' });
   } else {
-    breakdown.push({
-      label: 'Mint Authority',
-      safe: true,
-      score: 0,
-      detail: 'Mint authority revoked',
-    });
+    breakdown.push({ label: 'Mint Authority', safe: true, score: 0, detail: 'Mint authority revoked' });
   }
 
   // Freeze authority
-  if (!freezeAuthorityRevoked) {
+  if (!hasMintData) {
+    breakdown.push({ label: 'Freeze Authority', safe: true, score: 0, detail: 'On-chain data loading…' });
+  } else if (!freezeAuthorityRevoked) {
     rugScore += SCORE_FREEZE_NOT_REVOKED;
-    breakdown.push({
-      label: 'Freeze Authority',
-      safe: false,
-      score: SCORE_FREEZE_NOT_REVOKED,
-      detail: 'Freeze authority not revoked — wallets can be frozen',
-    });
+    breakdown.push({ label: 'Freeze Authority', safe: false, score: SCORE_FREEZE_NOT_REVOKED, detail: 'Freeze authority not revoked — wallets can be frozen' });
   } else {
-    breakdown.push({
-      label: 'Freeze Authority',
-      safe: true,
-      score: 0,
-      detail: 'Freeze authority revoked',
-    });
+    breakdown.push({ label: 'Freeze Authority', safe: true, score: 0, detail: 'Freeze authority revoked' });
   }
 
   // LP locked
-  if (!lpLocked) {
+  if (!hasSecurityData) {
+    breakdown.push({ label: 'LP Locked', safe: true, score: 0, detail: 'Security data not yet available' });
+  } else if (!lpLocked) {
     rugScore += SCORE_LP_NOT_LOCKED;
-    breakdown.push({
-      label: 'LP Locked',
-      safe: false,
-      score: SCORE_LP_NOT_LOCKED,
-      detail: 'Liquidity pool is not locked — can be removed at any time',
-    });
+    breakdown.push({ label: 'LP Locked', safe: false, score: SCORE_LP_NOT_LOCKED, detail: 'Liquidity pool is not locked — can be removed at any time' });
   } else {
-    breakdown.push({
-      label: 'LP Locked',
-      safe: true,
-      score: 0,
-      detail: 'Liquidity pool is locked',
-    });
+    breakdown.push({ label: 'LP Locked', safe: true, score: 0, detail: 'Liquidity pool is locked' });
   }
 
   // Top 10 holders
-  let top10Score = 0;
-  let top10Detail = '';
-  if (top10HolderPercent > 60) {
-    top10Score = SCORE_TOP10_GT60;
-    top10Detail = `Top 10 holders own ${top10HolderPercent.toFixed(1)}% — very concentrated`;
-  } else if (top10HolderPercent > 40) {
-    top10Score = SCORE_TOP10_GT40;
-    top10Detail = `Top 10 holders own ${top10HolderPercent.toFixed(1)}% — concentrated`;
+  if (!hasSecurityData) {
+    breakdown.push({ label: 'Top 10 Holders', safe: true, score: 0, detail: 'Holder data not yet available' });
   } else {
-    top10Detail = `Top 10 holders own ${top10HolderPercent.toFixed(1)}% — distributed`;
+    let top10Score = 0;
+    let top10Detail = '';
+    if (top10HolderPercent > 60) {
+      top10Score = SCORE_TOP10_GT60;
+      top10Detail = `Top 10 holders own ${top10HolderPercent.toFixed(1)}% — very concentrated`;
+    } else if (top10HolderPercent > 40) {
+      top10Score = SCORE_TOP10_GT40;
+      top10Detail = `Top 10 holders own ${top10HolderPercent.toFixed(1)}% — concentrated`;
+    } else {
+      top10Detail = `Top 10 holders own ${top10HolderPercent.toFixed(1)}% — distributed`;
+    }
+    rugScore += top10Score;
+    breakdown.push({ label: 'Top 10 Holders', safe: top10Score === 0, score: top10Score, detail: top10Detail });
   }
-  rugScore += top10Score;
-  breakdown.push({
-    label: 'Top 10 Holders',
-    safe: top10Score === 0,
-    score: top10Score,
-    detail: top10Detail,
-  });
 
-  // Creator sold all
-  if (creatorSoldAll) {
+  // Creator sold all — only score if we have a creator address
+  if (!creatorAddress) {
+    breakdown.push({ label: 'Creator Holdings', safe: true, score: 0, detail: 'Creator address unknown' });
+  } else if (creatorSoldAll) {
     rugScore += SCORE_CREATOR_SOLD;
-    breakdown.push({
-      label: 'Creator Holdings',
-      safe: false,
-      score: SCORE_CREATOR_SOLD,
-      detail: 'Creator has sold all tokens',
-    });
+    breakdown.push({ label: 'Creator Holdings', safe: false, score: SCORE_CREATOR_SOLD, detail: 'Creator has sold all tokens' });
   } else {
-    breakdown.push({
-      label: 'Creator Holdings',
-      safe: true,
-      score: 0,
-      detail: 'Creator still holds tokens',
-    });
+    breakdown.push({ label: 'Creator Holdings', safe: true, score: 0, detail: 'Creator still holds tokens' });
   }
 
   // Clamp to 0–100

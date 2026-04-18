@@ -128,6 +128,26 @@ create table positions (
   unique (mint, trade_id)
 );
 
+-- Token feed (every token seen from pump.fun WebSocket)
+create table tokens (
+  mint text primary key,
+  name text,
+  symbol text,
+  image_uri text,
+  description text,
+  creator_address text,
+  market_cap numeric default 0,
+  usd_market_cap numeric default 0,
+  sol_in_curve numeric default 0,
+  complete boolean default false,
+  twitter_url text,
+  telegram_url text,
+  website_url text,
+  total_supply numeric default 0,
+  created_timestamp timestamptz,
+  first_seen_at timestamptz
+);
+
 -- Watchlist
 create table watchlist (
   id bigserial primary key,

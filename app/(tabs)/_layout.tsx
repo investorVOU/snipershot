@@ -119,21 +119,18 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="config"
+        name="wallet"
         options={{
-          title: 'Config',
+          title: 'Profile',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="settings" size={size} color={color} />
+            <Ionicons name="person" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="wallet"
+        name="config"
         options={{
-          title: 'Wallet',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="wallet" size={size} color={color} />
-          ),
+          href: null,
         }}
       />
     </Tabs>

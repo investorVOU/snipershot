@@ -56,13 +56,21 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched, style }
               <Text style={[styles.age, { color: colors.mutedForeground }]}>{formatAge(token.createdTimestamp)}</Text>
               <View style={[styles.statPill, { backgroundColor: colors.muted }]}>
                 <Text style={[styles.statText, { color: colors.mutedForeground }]}>
-                  MC {token.usdMarketCap ? `$${formatCompact(token.usdMarketCap)}` : "—"}
+                  MC {token.usdMarketCap > 0
+                    ? `$${formatCompact(token.usdMarketCap)}`
+                    : token.marketCap > 0
+                    ? `${formatSOLValue(token.marketCap)} SOL`
+                    : "—"}
                 </Text>
               </View>
               <View style={[styles.statPill, { backgroundColor: colors.muted }]}>
                 <Feather name="droplet" size={10} color={colors.mutedForeground} />
                 <Text style={[styles.statText, { color: colors.mutedForeground }]}>
-                  LP {token.overview?.liquidity ? `$${formatCompact(token.overview.liquidity)}` : `${formatSOLValue(token.solInCurve)} SOL`}
+                  LP {token.overview?.liquidity
+                    ? `$${formatCompact(token.overview.liquidity)}`
+                    : token.solInCurve > 0
+                    ? `${formatSOLValue(token.solInCurve)} SOL`
+                    : "—"}
                 </Text>
               </View>
             </View>

@@ -155,19 +155,32 @@ Respond ONLY with valid JSON:
 }`;
 
   try {
-    const raw = await groqChat([{ role: 'user', content: prompt }], 300, 0.3);
-    const json = JSON.parse(raw.trim()) as AITokenRating;
+    const raw = await groqChat([{ role: 'user', content: prompt }], 300, 0.2);
+    // Extract JSON even if Groq wraps it in markdown code fences
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('No JSON in response');
+    const json = JSON.parse(match[0]) as AITokenRating;
+    // Validate required fields
+    if (typeof json.score !== 'number' || !json.grade || !json.verdict) throw new Error('Invalid shape');
     return json;
   } catch {
+    // Deterministic fallback from heuristic rug score
     const score = Math.max(0, 100 - token.rugScore);
+    const grade = score >= 80 ? 'A' : score >= 60 ? 'B' : score >= 40 ? 'C' : score >= 20 ? 'D' : 'F';
+    const flags: string[] = [];
+    if (!token.mintAuthorityRevoked) flags.push('Mint not revoked');
+    if (!token.freezeAuthorityRevoked) flags.push('Freeze not revoked');
+    if (!token.lpLocked) flags.push('LP unlocked');
+    if (token.top10HolderPercent > 50) flags.push('Whale concentration');
+    if (token.creatorSoldAll) flags.push('Creator dumped');
     return {
       score,
-      grade: score >= 80 ? 'A' : score >= 60 ? 'B' : score >= 40 ? 'C' : score >= 20 ? 'D' : 'F',
+      grade,
       verdict: score >= 70 ? 'WATCH' : score >= 40 ? 'RISKY' : 'RUG',
-      signal: score >= 70 ? 'HOLD' : 'SKIP',
-      confidence: 50,
-      reason: 'AI analysis unavailable, score estimated from rug filter',
-      flags: [],
+      signal: score >= 70 ? 'HOLD' : score >= 40 ? 'SKIP' : 'SELL',
+      confidence: 40,
+      reason: 'Score estimated from on-chain rug filter (AI offline)',
+      flags,
     };
   }
 }

@@ -42,4 +42,5 @@ class AIRequestQueue {
   }
 }
 
-export const aiQueue = new AIRequestQueue(2, 600);
+// Groq free tier: ~30 RPM per model. 1 concurrent + 2s delay = ~20 RPM (safe headroom).
+export const aiQueue = new AIRequestQueue(1, 2100);

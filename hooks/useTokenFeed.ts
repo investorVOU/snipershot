@@ -48,6 +48,8 @@ const MAX_FEED_SIZE = 100;
 const FEED_CACHE_KEY = 'snapshot_feed_cache';
 const LIVE_REFRESH_INTERVAL = 30_000; // 30s
 const LIVE_REFRESH_BATCH = 20;       // refresh newest N tokens
+// Only AI-rate newest N tokens automatically — rest rated on-demand in detail page
+const AI_AUTO_RATE_MAX = 8;
 const CACHE_DEBOUNCE_MS = 2000;
 
 // ─── Cache helpers ────────────────────────────────────────────────────────────
@@ -136,8 +138,15 @@ export function useTokenFeed() {
     return () => clearInterval(interval);
   }, []); // intentionally empty — reads state via tokensRef
 
+  // Track how many tokens have been auto-AI-rated this session
+  const aiRatedCount = useRef(0);
+
   // ── Add a new token from the WebSocket ─────────────────────────────────────
   const addToken = useCallback((newToken: PumpfunToken) => {
+    // Determine whether to auto-run AI (only for newest N tokens to keep queue short)
+    const shouldRunAI = aiRatedCount.current < AI_AUTO_RATE_MAX;
+    if (shouldRunAI) aiRatedCount.current++;
+
     setTokens((prev) => {
       if (prev.some((t) => t.mint === newToken.mint)) return prev;
       const feedToken: FeedToken = {
@@ -148,7 +157,7 @@ export function useTokenFeed() {
         sparklineData: [],
         isNewest: true,
         aiRating: null,
-        aiRatingLoading: true,
+        aiRatingLoading: shouldRunAI,
         creatorDumped: false,
         creatorDumpPct: 0,
       };
@@ -169,42 +178,57 @@ export function useTokenFeed() {
       .then(([rugResult, overview, ohlcv]) => {
         const sparklineData = ohlcv.map((b) => b.close);
         if (rugResult.rugScore <= 20) hapticNewSafeToken();
+
+        // Estimate USD market cap from SOL if Birdeye hasn't indexed yet
+        const estimatedUsdMC = newToken.usdMarketCap > 0
+          ? newToken.usdMarketCap
+          : overview?.marketCap ?? (newToken.marketCap * (overview?.price ?? 0));
+
         setTokens((prev) =>
           prev.map((t) =>
             t.mint === newToken.mint
-              ? { ...t, rugFilter: rugResult, rugFilterLoading: false, overview: overview ?? null, sparklineData }
+              ? {
+                  ...t,
+                  rugFilter: rugResult,
+                  rugFilterLoading: false,
+                  overview: overview ?? null,
+                  sparklineData,
+                  usdMarketCap: estimatedUsdMC || t.usdMarketCap,
+                }
               : t
           )
         );
 
-        // Run AI rating after rug filter (needs rug data)
-        void aiQueue.enqueue(() => getAITokenRating({
-          name: newToken.name,
-          symbol: newToken.symbol,
-          description: newToken.description ?? '',
-          rugScore: rugResult.rugScore,
-          mintAuthorityRevoked: rugResult.mintAuthorityRevoked,
-          freezeAuthorityRevoked: rugResult.freezeAuthorityRevoked,
-          lpLocked: rugResult.lpLocked,
-          top10HolderPercent: rugResult.top10HolderPercent,
-          creatorSoldAll: rugResult.creatorSoldAll,
-          solInBondingCurve: newToken.solInCurve,
-          usdMarketCap: newToken.usdMarketCap,
-          liquidity: overview?.liquidity,
-          volume24h: overview?.volume24h,
-          holders: overview?.holders,
-          priceChange1h: overview?.priceChange1h,
-        })).then((aiRating) => {
-          setTokens((prev) =>
-            prev.map((t) => t.mint === newToken.mint ? { ...t, aiRating, aiRatingLoading: false } : t)
-          );
-        }).catch(() => {
-          setTokens((prev) =>
-            prev.map((t) => t.mint === newToken.mint ? { ...t, aiRatingLoading: false } : t)
-          );
-        });
+        // AI rating — only for the first AI_AUTO_RATE_MAX tokens per session
+        if (shouldRunAI) {
+          void aiQueue.enqueue(() => getAITokenRating({
+            name: newToken.name,
+            symbol: newToken.symbol,
+            description: newToken.description ?? '',
+            rugScore: rugResult.rugScore,
+            mintAuthorityRevoked: rugResult.mintAuthorityRevoked,
+            freezeAuthorityRevoked: rugResult.freezeAuthorityRevoked,
+            lpLocked: rugResult.lpLocked,
+            top10HolderPercent: rugResult.top10HolderPercent,
+            creatorSoldAll: rugResult.creatorSoldAll,
+            solInBondingCurve: newToken.solInCurve,
+            usdMarketCap: estimatedUsdMC,
+            liquidity: overview?.liquidity,
+            volume24h: overview?.volume24h,
+            holders: overview?.holders,
+            priceChange1h: overview?.priceChange1h,
+          })).then((aiRating) => {
+            setTokens((prev) =>
+              prev.map((t) => t.mint === newToken.mint ? { ...t, aiRating, aiRatingLoading: false } : t)
+            );
+          }).catch(() => {
+            setTokens((prev) =>
+              prev.map((t) => t.mint === newToken.mint ? { ...t, aiRatingLoading: false } : t)
+            );
+          });
+        }
 
-        // Start monitoring creator wallet for dumps
+        // Monitor creator wallet for dump events
         if (newToken.creatorAddress) {
           void watchCreatorWallet(newToken.mint, newToken.creatorAddress, (sellEvent) => {
             setTokens((prev) =>
@@ -220,7 +244,7 @@ export function useTokenFeed() {
       .catch(() => {
         setTokens((prev) =>
           prev.map((t) =>
-            t.mint === newToken.mint ? { ...t, rugFilterLoading: false } : t
+            t.mint === newToken.mint ? { ...t, rugFilterLoading: false, aiRatingLoading: false } : t
           )
         );
       })

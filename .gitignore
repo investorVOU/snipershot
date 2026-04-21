@@ -7,3 +7,8 @@ expo-env.d.ts
 
 .env
 .env.local
+
+.env
+.env.local
+web app/.env
+web app/.env.local

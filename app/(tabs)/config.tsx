@@ -8,14 +8,27 @@ import {
   TouchableOpacity,
   TextInput,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import Slider from '@react-native-community/slider';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useWallet } from '../../hooks/useWallet';
 import { useSniper, SniperConfig } from '../../hooks/useSniper';
 import { usePriceAlerts } from '../../hooks/usePriceAlerts';
 import { useTheme } from '../../context/ThemeContext';
 import type { PriorityMode } from '../../services/jupiter';
+import { supabase } from '../../services/supabase';
+import { clearWalletCache } from '../../services/embeddedWallet';
 import Toast from 'react-native-toast-message';
+
+const ALL_ASYNC_STORAGE_KEYS = [
+  'snapshot_sniper_config',
+  'snapshot_feed_cache',
+  'snapshot_watchlist',
+  'snapshot_positions',
+  'snapshot_trades',
+  'snapshot_price_alerts',
+];
 
 function SectionHeader({ title, color }: { title: string; color: string }) {
   return <Text style={[styles.sectionHeader, { color }]}>{title}</Text>;
@@ -27,10 +40,72 @@ export default function ConfigScreen() {
   const { config, updateConfig, configLoaded } = sniper;
   const { activeAlerts, removeAlert } = usePriceAlerts();
   const { toggleTheme, isDark, colors } = useTheme();
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const handleSave = useCallback(async () => {
     Toast.show({ type: 'success', text1: 'Settings saved!' });
   }, []);
+
+  const handleDeleteAccount = useCallback(() => {
+    Alert.alert(
+      'Delete Account & Data',
+      'This will permanently erase all your local data, trade history, positions, and wallet key from this device. Your on-chain assets are unaffected.\n\nThis cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Everything',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Are you absolutely sure?',
+              'Type "DELETE" to confirm — all app data will be wiped.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Yes, Delete',
+                  style: 'destructive',
+                  onPress: async () => {
+                    setIsDeleting(true);
+                    try {
+                      const { data: { session } } = await supabase.auth.getSession();
+                      const userId = session?.user?.id;
+                      const pubkey = wallet.address;
+
+                      // 1. Clear all AsyncStorage keys
+                      await AsyncStorage.multiRemove(ALL_ASYNC_STORAGE_KEYS).catch(() => {});
+
+                      // 2. Delete Supabase user-scoped rows
+                      if (pubkey) {
+                        await Promise.allSettled([
+                          supabase.from('trades').delete().eq('user_pubkey', pubkey),
+                          supabase.from('fee_events').delete().eq('user_pubkey', pubkey),
+                          supabase.from('positions').delete().eq('user_pubkey', pubkey),
+                        ]);
+                      }
+
+                      // 3. Wipe wallet key from SecureStore
+                      if (userId) {
+                        await clearWalletCache(userId);
+                      }
+
+                      // 4. Sign out
+                      await wallet.disconnect();
+
+                      Toast.show({ type: 'success', text1: 'Account data deleted' });
+                    } catch {
+                      Toast.show({ type: 'error', text1: 'Delete failed', text2: 'Some data may remain' });
+                    } finally {
+                      setIsDeleting(false);
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
+    );
+  }, [wallet]);
 
   const setPriorityMode = (mode: PriorityMode) => updateConfig({ priorityMode: mode });
 
@@ -292,6 +367,26 @@ export default function ConfigScreen() {
       >
         <Text style={styles.saveBtnText}>Save Settings</Text>
       </TouchableOpacity>
+
+      {/* Danger Zone */}
+      <SectionHeader title="Danger Zone" color="#ef4444" />
+      <View style={[styles.card, { backgroundColor: '#ef444411', borderColor: '#ef444433' }]}>
+        <Text style={[styles.dangerDesc, { color: colors.textMuted }]}>
+          Permanently delete all local data, trade history, positions, and your wallet key from this device. Your on-chain assets are NOT affected — only app data is erased.
+        </Text>
+        <TouchableOpacity
+          style={[styles.dangerBtn, isDeleting && { opacity: 0.6 }]}
+          onPress={handleDeleteAccount}
+          disabled={isDeleting}
+          activeOpacity={0.8}
+        >
+          {isDeleting ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Text style={styles.dangerBtnText}>Delete Account & Data</Text>
+          )}
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
@@ -378,4 +473,12 @@ const styles = StyleSheet.create({
   alertSymbol: { fontSize: 14, fontWeight: '600' },
   alertTarget: { fontSize: 13, fontWeight: '600' },
   alertRemove: { fontSize: 16, fontWeight: '700' },
+  dangerDesc: { fontSize: 13, lineHeight: 20, marginBottom: 14 },
+  dangerBtn: {
+    backgroundColor: '#ef4444',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  dangerBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });

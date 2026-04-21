@@ -52,8 +52,10 @@ export async function runRugFilter(
   const lpLocked = securityInfo.lpLocked ?? false;
   const top10HolderPercent = securityInfo.top10HolderPercent ?? 0;
 
-  // Only flag creator sold if we have a valid creator address and confirmed balance
-  const creatorSoldAll = !!creatorAddress && creatorBalance === 0;
+  // Only flag creator sold if Birdeye has indexed the token (hasSecurityData).
+  // New pump.fun tokens always have creatorBalance=0 — creator hasn't received tokens yet
+  // (bonding curve holds them). Without security data, this check is a guaranteed false positive.
+  const creatorSoldAll = hasSecurityData && !!creatorAddress && creatorBalance === 0;
 
   let rugScore = 0;
   const breakdown: RugBreakdownItem[] = [];
@@ -107,9 +109,11 @@ export async function runRugFilter(
     breakdown.push({ label: 'Top 10 Holders', safe: top10Score === 0, score: top10Score, detail: top10Detail });
   }
 
-  // Creator sold all — only score if we have a creator address
+  // Creator sold all — only score when security data is available (mature token)
   if (!creatorAddress) {
     breakdown.push({ label: 'Creator Holdings', safe: true, score: 0, detail: 'Creator address unknown' });
+  } else if (!hasSecurityData) {
+    breakdown.push({ label: 'Creator Holdings', safe: true, score: 0, detail: 'Checking creator holdings…' });
   } else if (creatorSoldAll) {
     rugScore += SCORE_CREATOR_SOLD;
     breakdown.push({ label: 'Creator Holdings', safe: false, score: SCORE_CREATOR_SOLD, detail: 'Creator has sold all tokens' });

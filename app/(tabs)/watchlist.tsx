@@ -5,7 +5,7 @@ import { FlatList, Image, Platform, StyleSheet, Text, TouchableOpacity, View } f
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "../../hooks/useColors";
 import { useWatchlistContext, type WatchlistToken } from "../../hooks/useWatchlist";
-import { formatAge, formatCompact } from "../../utils/format";
+import { formatAge } from "../../utils/format";
 
 export default function WatchlistScreen() {
   const colors = useColors();
@@ -47,7 +47,7 @@ export default function WatchlistScreen() {
               <View style={styles.metaRow}>
                 <Text style={[styles.symbol, { color: colors.mutedForeground }]}>${item.symbol}</Text>
                 <Text style={[styles.addedAt, { color: colors.mutedForeground }]}>
-                  MC ${formatCompact(item.usdMarketCap || item.marketCap)} · Added {formatAge(item.addedAt)}
+                  MC — · Added {formatAge(item.addedAt)}
                 </Text>
               </View>
             </View>

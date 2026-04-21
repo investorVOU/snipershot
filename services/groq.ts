@@ -1,5 +1,7 @@
-const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-// Fast model first for feed ratings; fall back to 70B for quality
+// Route through Supabase Edge Function so the Groq key stays server-side.
+// Falls back to direct Groq call (with EXPO_PUBLIC key) if edge function unavailable.
+const GROQ_PROXY_URL = `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/groq-proxy`;
+const GROQ_DIRECT_URL = "https://api.groq.com/openai/v1/chat/completions";
 const GROQ_MODELS = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"];
 
 export interface GroqMessage {
@@ -7,38 +9,72 @@ export interface GroqMessage {
   content: string;
 }
 
+function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  return fetch(url, { ...options, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+}
+
 export async function groqChat(
   messages: GroqMessage[],
   maxTokens = 512,
   temperature = 0.7
 ): Promise<string> {
-  const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY;
-  if (!apiKey || apiKey === "your_groq_api_key_here") {
-    throw new Error("EXPO_PUBLIC_GROQ_API_KEY not set in .env");
-  }
+  const body = (model: string) =>
+    JSON.stringify({ model, messages, max_tokens: maxTokens, temperature });
 
-  let lastError = "Unknown error";
   for (const model of GROQ_MODELS) {
-    const res = await fetch(GROQ_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({ model, messages, max_tokens: maxTokens, temperature }),
-    });
+    // 1. Try edge-function proxy (GROQ_API_KEY stays server-side), 5-second timeout
+    try {
+      const res = await fetchWithTimeout(
+        GROQ_PROXY_URL,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? ""}`,
+          },
+          body: body(model),
+        },
+        5000
+      );
+      if (res.ok) {
+        const json = (await res.json()) as { choices: Array<{ message: { content: string } }> };
+        return json.choices[0]?.message?.content ?? "";
+      }
+      if (res.status === 429) continue;
+    } catch { /* proxy timeout or network error — fall through to direct */ }
 
-    if (!res.ok) {
-      lastError = `${res.status}`;
-      if (res.status === 429) continue; // rate-limited, try next model
+    // 2. Direct Groq call using EXPO_PUBLIC key as fallback
+    const apiKey = process.env.EXPO_PUBLIC_GROQ_API_KEY ?? "";
+    if (!apiKey || apiKey === "your_groq_api_key_here") continue;
+
+    try {
+      const res = await fetchWithTimeout(
+        GROQ_DIRECT_URL,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`,
+          },
+          body: body(model),
+        },
+        15000
+      );
+      if (res.ok) {
+        const json = (await res.json()) as { choices: Array<{ message: { content: string } }> };
+        return json.choices[0]?.message?.content ?? "";
+      }
+      if (res.status === 429) continue;
       throw new Error(`Groq ${res.status}`);
+    } catch (e) {
+      if (e instanceof Error && e.message.startsWith("Groq")) throw e;
+      // AbortError or network error — try next model
     }
-
-    const json = (await res.json()) as { choices: Array<{ message: { content: string } }> };
-    return json.choices[0]?.message?.content ?? "";
   }
 
-  throw new Error(`Groq rate-limited on all models: ${lastError}`);
+  throw new Error("Groq: all models unavailable");
 }
 
 export interface RugVerdictResult {
@@ -171,24 +207,7 @@ Respond ONLY with valid JSON:
     if (typeof json.score !== 'number' || !json.grade || !json.verdict) throw new Error('Invalid shape');
     return json;
   } catch {
-    // Deterministic fallback from heuristic rug score
-    const score = Math.max(0, 100 - token.rugScore);
-    const grade = score >= 80 ? 'A' : score >= 60 ? 'B' : score >= 40 ? 'C' : score >= 20 ? 'D' : 'F';
-    const flags: string[] = [];
-    if (!token.mintAuthorityRevoked) flags.push('Mint not revoked');
-    if (!token.freezeAuthorityRevoked) flags.push('Freeze not revoked');
-    if (!token.lpLocked) flags.push('LP unlocked');
-    if (token.top10HolderPercent > 50) flags.push('Whale concentration');
-    if (token.creatorSoldAll) flags.push('Creator dumped');
-    return {
-      score,
-      grade,
-      verdict: score >= 70 ? 'WATCH' : score >= 40 ? 'RISKY' : 'RUG',
-      signal: score >= 70 ? 'HOLD' : score >= 40 ? 'SKIP' : 'SELL',
-      confidence: 40,
-      reason: 'Score estimated from on-chain rug filter (AI offline)',
-      flags,
-    };
+    throw new Error('AI token rating unavailable');
   }
 }
 

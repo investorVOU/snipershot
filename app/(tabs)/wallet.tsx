@@ -25,7 +25,9 @@ import { fetchSOLPrice } from '../../services/birdeye';
 import { exportWalletKey } from '../../services/embeddedWallet';
 import { getProfile, pickAndUploadAvatar } from '../../services/profile';
 import { supabase } from '../../services/supabase';
-import { formatSOLValue, formatUSD, truncateAddress } from '../../utils/format';
+import { formatSOLValue, formatUSD, truncateAddress, formatCompact } from '../../utils/format';
+import { fetchSPLBalances, fetchOnChainHistory, type SPLBalance, type OnChainTx } from '../../services/helius';
+import { QRCode } from '../../components/QRCode';
 
 export default function ProfileScreen() {
   const colors = useColors();
@@ -35,11 +37,17 @@ export default function ProfileScreen() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [avatarLoading, setAvatarLoading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isSending, setIsSending] = useState(false);
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [withdrawAddress, setWithdrawAddress] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [splBalances, setSplBalances] = useState<SPLBalance[]>([]);
+  const [splLoading, setSplLoading] = useState(false);
+  const [showQR, setShowQR] = useState(false);
+  const [txHistory, setTxHistory] = useState<OnChainTx[]>([]);
+  const [txLoading, setTxLoading] = useState(false);
 
-  const { address, solBalance, connected, disconnect } = wallet;
+  const { address, solBalance, connected, disconnect, sendSOL } = wallet;
 
   const topPad = Platform.OS === 'web' ? Math.max(insets.top, 67) : insets.top;
   const botPad = Platform.OS === 'web' ? Math.max(insets.bottom, 34) : insets.bottom;
@@ -49,6 +57,20 @@ export default function ProfileScreen() {
     const interval = setInterval(() => fetchSOLPrice().then(setSolUSDPrice).catch(() => {}), 60_000);
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!address) return;
+    setSplLoading(true);
+    fetchSPLBalances(address)
+      .then(setSplBalances)
+      .catch(() => {})
+      .finally(() => setSplLoading(false));
+    setTxLoading(true);
+    fetchOnChainHistory(address, 20)
+      .then(setTxHistory)
+      .catch(() => {})
+      .finally(() => setTxLoading(false));
+  }, [address]);
 
   // Load profile avatar
   useEffect(() => {
@@ -155,26 +177,44 @@ export default function ProfileScreen() {
       return;
     }
     const amt = parseFloat(withdrawAmount);
-    if (!amt || amt <= 0 || amt > solBalance) {
-      Toast.show({ type: 'error', text1: 'Invalid amount' });
+    if (!amt || amt <= 0 || amt > solBalance - 0.001) {
+      Toast.show({ type: 'error', text1: 'Invalid amount', text2: `Max: ${(solBalance - 0.001).toFixed(4)} SOL (keeping 0.001 for fees)` });
       return;
     }
     Alert.alert(
       'Confirm Withdrawal',
-      `Send ${amt} SOL to\n${truncateAddress(withdrawAddress)}?\n\nThis action cannot be undone.`,
+      `Send ${amt} SOL to\n${truncateAddress(withdrawAddress)}?\n\nThis cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Send',
           style: 'destructive',
-          onPress: () => {
+          onPress: async () => {
             setShowWithdraw(false);
-            Toast.show({ type: 'info', text1: 'Use the swap/send flow to withdraw SOL', text2: 'Direct send coming soon' });
+            setIsSending(true);
+            try {
+              const sig = await sendSOL(withdrawAddress.trim(), amt);
+              setWithdrawAddress('');
+              setWithdrawAmount('');
+              Toast.show({
+                type: 'success',
+                text1: `Sent ${amt} SOL`,
+                text2: `Tx: ${sig.slice(0, 20)}…`,
+              });
+            } catch (e: unknown) {
+              Toast.show({
+                type: 'error',
+                text1: 'Transfer failed',
+                text2: e instanceof Error ? e.message : 'Try again',
+              });
+            } finally {
+              setIsSending(false);
+            }
           },
         },
       ]
     );
-  }, [withdrawAddress, withdrawAmount, solBalance]);
+  }, [withdrawAddress, withdrawAmount, solBalance, sendSOL]);
 
   if (!connected) {
     return (
@@ -254,24 +294,48 @@ export default function ProfileScreen() {
         <View style={styles.dwRow}>
           <TouchableOpacity
             style={[styles.dwBtn, { backgroundColor: colors.card, borderColor: '#14f19566' }]}
-            onPress={handleCopy}
+            onPress={() => setShowQR(true)}
             activeOpacity={0.8}
           >
             <Feather name="download" size={22} color="#14f195" />
             <Text style={[styles.dwLabel, { color: '#14f195' }]}>Deposit</Text>
-            <Text style={[styles.dwSub, { color: colors.mutedForeground }]}>Copy address & send SOL</Text>
+            <Text style={[styles.dwSub, { color: colors.mutedForeground }]}>Show QR · Copy address</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.dwBtn, { backgroundColor: colors.card, borderColor: '#ef444466' }]}
             onPress={() => setShowWithdraw(true)}
+            disabled={isSending}
             activeOpacity={0.8}
           >
-            <Feather name="upload" size={22} color="#ef4444" />
-            <Text style={[styles.dwLabel, { color: '#ef4444' }]}>Withdraw</Text>
+            {isSending
+              ? <ActivityIndicator color="#ef4444" />
+              : <Feather name="upload" size={22} color="#ef4444" />}
+            <Text style={[styles.dwLabel, { color: '#ef4444' }]}>{isSending ? 'Sending…' : 'Withdraw'}</Text>
             <Text style={[styles.dwSub, { color: colors.mutedForeground }]}>Send SOL out</Text>
           </TouchableOpacity>
         </View>
+
+        {/* SPL Token Balances */}
+        {(splLoading || splBalances.length > 0) && (
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.cardTitle, { color: colors.mutedForeground }]}>Token Balances</Text>
+            {splLoading ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : (
+              splBalances.map((b) => (
+                <View key={b.mint} style={[styles.splRow, { borderTopColor: colors.border }]}>
+                  <Text style={[styles.splMint, { color: colors.mutedForeground }]} numberOfLines={1}>
+                    {truncateAddress(b.mint)}
+                  </Text>
+                  <Text style={[styles.splAmount, { color: colors.foreground }]}>
+                    {formatCompact(b.uiAmount)}
+                  </Text>
+                </View>
+              ))
+            )}
+          </View>
+        )}
 
         {/* Export key */}
         <TouchableOpacity
@@ -305,6 +369,33 @@ export default function ProfileScreen() {
           ))}
         </View>
 
+        {/* On-chain transaction history */}
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Text style={[styles.cardTitle, { color: colors.mutedForeground }]}>Transaction History</Text>
+          {txLoading ? (
+            <ActivityIndicator color={colors.primary} style={{ marginTop: 8 }} />
+          ) : txHistory.length === 0 ? (
+            <Text style={[styles.depositHint, { color: colors.mutedForeground }]}>No transactions found</Text>
+          ) : (
+            txHistory.slice(0, 10).map((tx) => (
+              <View key={tx.signature} style={[styles.txRow, { borderTopColor: colors.border }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.txType, { color: colors.foreground }]} numberOfLines={1}>
+                    {tx.type.replace(/_/g, ' ')}
+                    {tx.description ? ` · ${tx.description.slice(0, 40)}` : ''}
+                  </Text>
+                  <Text style={[styles.txDate, { color: colors.mutedForeground }]}>
+                    {new Date(tx.timestamp).toLocaleDateString()} · {truncateAddress(tx.signature)}
+                  </Text>
+                </View>
+                <Text style={[styles.txFee, { color: colors.mutedForeground }]}>
+                  {tx.fee > 0 ? `${tx.fee.toFixed(5)} SOL` : ''}
+                </Text>
+              </View>
+            ))
+          )}
+        </View>
+
         {/* Disconnect */}
         <TouchableOpacity
           style={[styles.disconnectBtn, { borderColor: '#ef4444' }]}
@@ -315,6 +406,36 @@ export default function ProfileScreen() {
           <Text style={styles.disconnectText}>Disconnect Wallet</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* QR Code modal */}
+      <Modal visible={showQR} animationType="fade" transparent presentationStyle="overFullScreen">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.qrSheet, { backgroundColor: colors.card }]}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Deposit SOL</Text>
+              <TouchableOpacity onPress={() => setShowQR(false)}>
+                <Feather name="x" size={22} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
+            <Text style={[styles.depositHint, { color: colors.mutedForeground, textAlign: 'center' }]}>
+              Scan to send SOL to this wallet
+            </Text>
+            <View style={styles.qrWrapper}>
+              <QRCode value={address ?? ''} size={200} color="#000" backgroundColor="#fff" />
+            </View>
+            <Text style={[styles.fullAddress, { color: colors.foreground, textAlign: 'center', fontSize: 11 }]} selectable>
+              {address}
+            </Text>
+            <TouchableOpacity
+              style={[styles.addrBtn, { backgroundColor: '#9945ff22', borderColor: '#9945ff55', alignSelf: 'center', paddingHorizontal: 24 }]}
+              onPress={handleCopy}
+            >
+              <Feather name="copy" size={14} color="#9945ff" />
+              <Text style={[styles.addrBtnText, { color: '#9945ff' }]}>Copy Address</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* Withdraw modal */}
       <Modal visible={showWithdraw} animationType="slide" transparent presentationStyle="overFullScreen">
@@ -405,6 +526,15 @@ const styles = StyleSheet.create({
   networkValue: { fontSize: 13, fontWeight: '600' },
   disconnectBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, paddingVertical: 16, borderWidth: 1, backgroundColor: '#ef444411', marginBottom: 8 },
   disconnectText: { color: '#ef4444', fontSize: 15, fontWeight: '600' },
+  splRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTopWidth: 1, marginTop: 8 },
+  splMint: { fontSize: 12, fontFamily: 'monospace', flex: 1 },
+  splAmount: { fontSize: 13, fontWeight: '700', marginLeft: 8 },
+  txRow: { paddingTop: 10, borderTopWidth: 1, marginTop: 8, flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  txType: { fontSize: 12, fontWeight: '600' },
+  txDate: { fontSize: 11, marginTop: 2 },
+  txFee: { fontSize: 11 },
+  qrSheet: { borderRadius: 24, padding: 24, gap: 16, marginHorizontal: 24, alignItems: 'center' },
+  qrWrapper: { padding: 16, backgroundColor: '#fff', borderRadius: 16 },
   modalOverlay: { flex: 1, backgroundColor: '#00000088', justifyContent: 'flex-end' },
   modalSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 14 },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },

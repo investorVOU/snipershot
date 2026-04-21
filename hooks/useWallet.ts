@@ -13,6 +13,7 @@ export interface WalletContextValue {
   signTransaction: (tx: VersionedTransaction) => Promise<VersionedTransaction>;
   signAllTransactions: (txs: VersionedTransaction[]) => Promise<VersionedTransaction[]>;
   refreshBalance: () => Promise<void>;
+  sendSOL: (toAddress: string, amountSOL: number) => Promise<string>;
 }
 
 export function useWallet(): WalletContextValue {

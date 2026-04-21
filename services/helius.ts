@@ -1,6 +1,8 @@
 import axios from 'axios';
 import { HELIUS_RPC_URL, HELIUS_WS_URL, PUMPFUN_PROGRAM_ID } from '../constants/programs';
 
+const HELIUS_TIMEOUT_MS = 8_000;
+
 export interface HeliusAssetMetadata {
   mint: string;
   name: string;
@@ -31,7 +33,7 @@ export async function getAssetMetadata(mint: string): Promise<HeliusAssetMetadat
       id: 'get-asset',
       method: 'getAsset',
       params: { id: mint },
-    });
+    }, { timeout: HELIUS_TIMEOUT_MS });
 
     const asset = data?.result;
     if (!asset) return null;
@@ -77,7 +79,7 @@ export async function getMintInfo(mint: string): Promise<{
         mint,
         { encoding: 'jsonParsed' },
       ],
-    });
+    }, { timeout: HELIUS_TIMEOUT_MS });
 
     const info = data?.result?.value?.data?.parsed?.info;
     if (!info) return null;
@@ -106,7 +108,7 @@ export async function getTokenAccountBalance(
         { mint },
         { encoding: 'jsonParsed' },
       ],
-    });
+    }, { timeout: HELIUS_TIMEOUT_MS });
 
     const accounts = data?.result?.value ?? [];
     if (accounts.length === 0) return 0;
@@ -115,6 +117,43 @@ export async function getTokenAccountBalance(
     return balance;
   } catch {
     return 0;
+  }
+}
+
+export interface SPLBalance {
+  mint: string;
+  uiAmount: number;
+  decimals: number;
+}
+
+/** Fetch all SPL token balances for a wallet */
+export async function fetchSPLBalances(walletAddress: string): Promise<SPLBalance[]> {
+  try {
+    const { data } = await axios.post(HELIUS_RPC_URL, {
+      jsonrpc: '2.0',
+      id: 'get-spl',
+      method: 'getTokenAccountsByOwner',
+      params: [
+        walletAddress,
+        { programId: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' },
+        { encoding: 'jsonParsed' },
+      ],
+    }, { timeout: HELIUS_TIMEOUT_MS });
+    const accounts: unknown[] = data?.result?.value ?? [];
+    return accounts
+      .map((acc) => {
+        const info = (acc as Record<string, Record<string, unknown>>)?.account?.data?.parsed?.info;
+        if (!info) return null;
+        const ta = info.tokenAmount as Record<string, unknown>;
+        return {
+          mint: info.mint as string,
+          uiAmount: (ta?.uiAmount as number) ?? 0,
+          decimals: (ta?.decimals as number) ?? 0,
+        };
+      })
+      .filter((b): b is SPLBalance => b !== null && b.uiAmount > 0);
+  } catch {
+    return [];
   }
 }
 
@@ -227,6 +266,44 @@ export function subscribePumpfunTransactions(
     if (reconnectTimeout) clearTimeout(reconnectTimeout);
     ws?.close();
   };
+}
+
+export interface OnChainTx {
+  signature: string;
+  timestamp: number;
+  type: string;
+  description: string;
+  fee: number;
+}
+
+/** Fetch on-chain transaction history for a wallet via Helius enhanced API */
+export async function fetchOnChainHistory(walletAddress: string, limit = 20): Promise<OnChainTx[]> {
+  try {
+    const { data } = await axios.get(
+      `https://api.helius.xyz/v0/addresses/${walletAddress}/transactions`,
+      {
+        params: {
+          'api-key': process.env.EXPO_PUBLIC_HELIUS_KEY,
+          limit,
+          type: 'SWAP,TRANSFER,NFT_SALE',
+        },
+        timeout: 8000,
+      }
+    );
+    const txs: unknown[] = Array.isArray(data) ? data : [];
+    return txs.map((tx) => {
+      const t = tx as Record<string, unknown>;
+      return {
+        signature: (t.signature as string) ?? '',
+        timestamp: ((t.timestamp as number) ?? 0) * 1000,
+        type: (t.type as string) ?? 'UNKNOWN',
+        description: (t.description as string) ?? '',
+        fee: ((t.fee as number) ?? 0) / 1e9,
+      };
+    });
+  } catch {
+    return [];
+  }
 }
 
 /** Send a raw transaction via Helius RPC */

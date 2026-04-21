@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Keypair,
   PublicKey,
+  Transaction,
+  SystemProgram,
   VersionedTransaction,
   LAMPORTS_PER_SOL,
 } from '@solana/web3.js';
@@ -101,6 +103,26 @@ export function useAuthWallet(): WalletContextValue {
     return txs.map((tx) => { tx.sign([keypair]); return tx; });
   }, [keypair]);
 
+  const sendSOL = useCallback(async (toAddress: string, amountSOL: number): Promise<string> => {
+    if (!keypair) throw new Error('No wallet connected');
+    if (authMethod === 'guest') throw new Error('Login required to send SOL.');
+    const connection = getConnection();
+    const toPubkey = new PublicKey(toAddress);
+    const lamports = Math.floor(amountSOL * LAMPORTS_PER_SOL);
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+    const tx = new Transaction({
+      recentBlockhash: blockhash,
+      feePayer: keypair.publicKey,
+    }).add(
+      SystemProgram.transfer({ fromPubkey: keypair.publicKey, toPubkey, lamports })
+    );
+    tx.sign(keypair);
+    const sig = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
+    await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
+    await refreshBalance();
+    return sig;
+  }, [keypair, authMethod, refreshBalance]);
+
   return {
     publicKey: keypair?.publicKey ?? null,
     address: keypair?.publicKey.toBase58() ?? null,
@@ -113,6 +135,7 @@ export function useAuthWallet(): WalletContextValue {
     signTransaction,
     signAllTransactions,
     refreshBalance,
+    sendSOL,
   };
 }
 

@@ -6,13 +6,15 @@ import type { BottomSheetBackdropProps } from "@gorhom/bottom-sheet";
 import { useColors } from "../hooks/useColors";
 import type { FeedToken } from "../hooks/useTokenFeed";
 import type { SniperConfig } from "../hooks/useSniper";
-import { formatSOLValue, truncateAddress } from "../utils/format";
+import { formatSOLValue, solToLamports, truncateAddress } from "../utils/format";
 import { hapticSnipe } from "../services/haptics";
+import { getQuote } from "../services/jupiter";
+import { NATIVE_MINT } from "../constants/programs";
 
 interface Props {
   token: FeedToken | null;
   config: SniperConfig;
-  onBuy: (mint: string, name: string, symbol: string, imageUri: string, sol?: number) => Promise<string | null>;
+  onBuy: (mint: string, name: string, symbol: string, imageUri: string, sol?: number, slippageBps?: number) => Promise<string | null>;
   isBuying: boolean;
   onClose: () => void;
   connected: boolean;
@@ -22,15 +24,40 @@ export function SnipeSheet({ token, config, onBuy, isBuying, onClose, connected 
   const colors = useColors();
   const sheetRef = useRef<BottomSheet>(null);
   const [solAmount, setSolAmount] = useState(config.solAmount.toFixed(2));
+  const [priceImpact, setPriceImpact] = useState<number | null>(null);
+  const [estTokens, setEstTokens] = useState<number | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const quoteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (token) {
       sheetRef.current?.expand();
       setSolAmount(config.solAmount.toFixed(2));
+      setPriceImpact(null);
+      setEstTokens(null);
     } else {
       sheetRef.current?.close();
     }
   }, [token, config.solAmount]);
+
+  // Debounced quote fetch for price impact preview
+  useEffect(() => {
+    if (!token) return;
+    if (quoteTimer.current) clearTimeout(quoteTimer.current);
+    const sol = parseFloat(solAmount);
+    if (isNaN(sol) || sol <= 0) { setPriceImpact(null); setEstTokens(null); return; }
+    quoteTimer.current = setTimeout(() => {
+      setQuoteLoading(true);
+      getQuote(NATIVE_MINT.toBase58(), token.mint, solToLamports(sol), config.slippageBps)
+        .then((q) => {
+          setPriceImpact(parseFloat(q.priceImpactPct));
+          setEstTokens(parseInt(q.outAmount, 10));
+        })
+        .catch(() => { setPriceImpact(null); setEstTokens(null); })
+        .finally(() => setQuoteLoading(false));
+    }, 600);
+    return () => { if (quoteTimer.current) clearTimeout(quoteTimer.current); };
+  }, [solAmount, token, config.slippageBps]);
 
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -44,7 +71,9 @@ export function SnipeSheet({ token, config, onBuy, isBuying, onClose, connected 
     const sol = parseFloat(solAmount);
     if (isNaN(sol) || sol <= 0) return;
     hapticSnipe();
-    await onBuy(token.mint, token.name, token.symbol, token.imageUri, sol);
+    // Auto-slippage: if price impact > 10%, bump slippage to 30% automatically
+    const autoSlippage = priceImpact != null && priceImpact > 10 ? 3000 : config.slippageBps;
+    await onBuy(token.mint, token.name, token.symbol, token.imageUri, sol, autoSlippage);
     sheetRef.current?.close();
     onClose();
   };
@@ -126,6 +155,26 @@ export function SnipeSheet({ token, config, onBuy, isBuying, onClose, connected 
               <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>Platform Fee</Text>
               <Text style={[styles.infoValue, { color: colors.foreground }]}>0.5%</Text>
             </View>
+            <View style={[styles.infoRow, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.infoLabel, { color: colors.mutedForeground }]}>Price Impact</Text>
+              {quoteLoading ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Text style={[styles.infoValue, {
+                  color: priceImpact == null ? colors.mutedForeground
+                    : priceImpact > 10 ? '#ef4444'
+                    : priceImpact > 3 ? '#f5a623'
+                    : '#14f195',
+                }]}>
+                  {priceImpact != null ? `${priceImpact.toFixed(2)}%` : '—'}
+                </Text>
+              )}
+            </View>
+            {priceImpact != null && priceImpact > 10 && (
+              <View style={[styles.impactWarn, { backgroundColor: '#ef444422', borderColor: '#ef4444' }]}>
+                <Text style={styles.impactWarnText}>⚠ High price impact — auto-slippage increased to 30%</Text>
+              </View>
+            )}
 
             {!connected ? (
               <View style={[styles.connectWarning, { backgroundColor: "#ff444422", borderColor: "#ff4444" }]}>
@@ -182,4 +231,6 @@ const styles = StyleSheet.create({
   buyBtnText: { color: "#fff", fontSize: 17, fontWeight: "700" },
   connectWarning: { borderRadius: 12, padding: 14, alignItems: "center", borderWidth: 1, marginTop: 4 },
   connectWarningText: { color: "#ff4444", fontSize: 14, fontWeight: "600", textAlign: "center" },
+  impactWarn: { borderRadius: 10, padding: 10, borderWidth: 1, alignItems: 'center' },
+  impactWarnText: { color: '#ef4444', fontSize: 12, fontWeight: '600', textAlign: 'center' },
 });

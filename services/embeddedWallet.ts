@@ -9,19 +9,32 @@ const APP_WALLET_SALT = process.env.EXPO_PUBLIC_WALLET_SALT ?? 'sniper-shot-embe
 const SECURE_KEY = (userId: string) => `ew_sk_${userId}`;
 
 // ─── Key derivation ───────────────────────────────────────────────────────────
-// SHA-256(userId + APP_SALT) → 32-byte nacl.secretbox key.
-// APP_SALT lives in EXPO_PUBLIC_ env so it's client-side readable; this means
-// server-side encrypted backups are only as safe as Supabase RLS + obscurity.
-// The primary copy lives in the device keychain (SecureStore), which is
-// protected by the OS (iOS Keychain / Android Keystore). Supabase is a
-// cross-device backup only — treat it accordingly.
+// Primary: Supabase Edge Function derives SHA-256(userId + WALLET_SALT) server-side.
+//          WALLET_SALT never touches the client bundle.
+// Fallback: local derivation using EXPO_PUBLIC_WALLET_SALT (client-visible but still
+//           requires Supabase RLS + the user's session to access encrypted backup).
 async function deriveKey(userId: string): Promise<Uint8Array> {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      const res = await fetch(
+        `${process.env.EXPO_PUBLIC_SUPABASE_URL}/functions/v1/derive-wallet-key`,
+        { headers: { Authorization: `Bearer ${session.access_token}` } }
+      );
+      if (res.ok) {
+        const { key } = await res.json() as { key: string };
+        if (key?.length === 64) return Buffer.from(key, 'hex');
+      }
+    }
+  } catch { /* network error — fall through */ }
+
+  // Local fallback: same SHA-256 formula, SALT from env
   const hex = await Crypto.digestStringAsync(
     Crypto.CryptoDigestAlgorithm.SHA256,
     userId + APP_WALLET_SALT,
     { encoding: Crypto.CryptoEncoding.HEX }
   );
-  return Buffer.from(hex, 'hex'); // 32 bytes — exactly what nacl.secretbox needs
+  return Buffer.from(hex, 'hex');
 }
 
 // Encrypt with XSalsa20-Poly1305 (authenticated encryption via tweetnacl)

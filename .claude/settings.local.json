@@ -41,7 +41,19 @@
       "Bash(node *)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"https://frontend-api.pump.fun/coins?sort=created_timestamp&order=DESC&limit=3&includeNsfw=false\" --max-time 5)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"https://frontend-api-v2.pump.fun/coins?sort=created_timestamp&order=DESC&limit=3&includeNsfw=false\" --max-time 5)",
-      "Bash(taskkill //F //IM node.exe)"
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(python -c \"import json,sys; p=json.load\\(sys.stdin\\)['dependencies']; [print\\(k,v\\) for k,v in sorted\\(p.items\\(\\)\\)]\")",
+      "Bash(cat hooks/useTokenVotes.ts)",
+      "Bash(cat .env)",
+      "Bash(ls *.env*)",
+      "Bash(echo \"\")",
+      "Bash(echo \".env\")",
+      "Bash(echo \".env.local\")",
+      "Bash(xargs cat *)",
+      "Bash(npx supabase *)",
+      "Bash(eas --version)",
+      "Bash(eas whoami *)",
+      "Bash(npm run *)"
     ]
   }
 }

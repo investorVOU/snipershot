@@ -203,7 +203,7 @@ export function subscribePumpPortal(
           createdTimestamp: Date.now(),
           marketCap: msg.marketCapSol ?? 0,
           usdMarketCap: 0,
-          solInCurve: msg.vSolInBondingCurve ?? 0,
+          solInCurve: (msg.vSolInBondingCurve ?? 0) / 1_000_000_000,
           complete: false,
           twitterUrl: meta.twitterUrl,
           telegramUrl: meta.telegramUrl,

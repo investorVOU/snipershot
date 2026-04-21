@@ -1,4 +1,3 @@
-import * as FileSystem from 'expo-file-system';
 import * as ImagePicker from 'expo-image-picker';
 import { supabase } from './supabase';
 
@@ -30,20 +29,19 @@ export async function pickAndUploadAvatar(userId: string): Promise<string | null
     allowsEditing: true,
     aspect: [1, 1],
     quality: 0.7,
+    base64: true, // get base64 directly — avoids FileSystem.EncodingType issues
   });
 
-  if (result.canceled || !result.assets[0]) return null;
+  if (result.canceled || !result.assets?.[0]) return null;
 
   const asset = result.assets[0];
-  const ext = (asset.uri.split('.').pop() ?? 'jpg').toLowerCase();
+  if (!asset.base64) throw new Error('Could not read image data');
+
+  const ext = (asset.uri.split('.').pop() ?? 'jpg').toLowerCase().replace(/\?.*$/, '');
   const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
   const path = `avatars/${userId}.${ext}`;
 
-  // React Native Blob doesn't support .arrayBuffer() — read as base64 via FileSystem instead
-  const base64 = await FileSystem.readAsStringAsync(asset.uri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-  const buffer = Buffer.from(base64, 'base64');
+  const buffer = Buffer.from(asset.base64, 'base64');
 
   const { error } = await supabase.storage
     .from('profiles')

@@ -1,8 +1,11 @@
 {
   "expo": {
-    "name": "SnapShot Sniper",
-    "slug": "snapshot-sniper",
+    "name": "SniperShot",
+    "slug": "snipershot",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -14,23 +17,31 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.snapshotsniper.app",
+      "bundleIdentifier": "com.snipershot.app",
+      "buildNumber": "1",
       "infoPlist": {
-        "NSFaceIDUsageDescription": "Used to secure your wallet export",
-        "UIBackgroundModes": ["fetch", "remote-notification"]
-      }
+        "NSFaceIDUsageDescription": "Used to secure your wallet private key export",
+        "NSPhotoLibraryUsageDescription": "Used to set your profile picture",
+        "NSCameraUsageDescription": "Used to take a profile picture",
+        "UIBackgroundModes": ["fetch", "remote-notification"],
+        "LSApplicationQueriesSchemes": ["itms-apps"]
+      },
+      "associatedDomains": []
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0a0a0f"
       },
-      "package": "com.snapshotsniper.app",
+      "package": "com.snipershot.app",
+      "versionCode": 1,
       "permissions": [
-        "USE_FINGERPRINT",
-        "USE_BIOMETRIC",
-        "RECEIVE_BOOT_COMPLETED",
-        "VIBRATE"
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_EXTERNAL_STORAGE"
       ]
     },
     "web": {
@@ -39,6 +50,13 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Used to set your profile picture",
+          "cameraPermission": "Used to take a profile picture"
+        }
+      ],
       [
         "expo-notifications",
         {
@@ -49,13 +67,18 @@
       [
         "expo-local-authentication",
         {
-          "faceIDPermission": "Used to secure your wallet export"
+          "faceIDPermission": "Used to secure your wallet private key export"
         }
       ]
     ],
-    "scheme": "snapshot-sniper",
+    "scheme": "snipershot",
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "YOUR_EAS_PROJECT_ID"
+      }
     }
   }
 }

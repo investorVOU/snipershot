@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Image,
   Linking,
+  Share,
 } from 'react-native';
 import { useLocalSearchParams, useNavigation, router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -20,9 +21,10 @@ import { AIRatingCard } from '../../components/AIVerdictBadge';
 import { PriceChart } from '../../components/PriceChart';
 import { RugScoreBadge } from '../../components/RugScoreBadge';
 import { SnipeSheet } from '../../components/SnipeSheet';
+import { SellSheet } from '../../components/SellSheet';
 import { useWallet } from '../../hooks/useWallet';
 import { useSniper } from '../../hooks/useSniper';
-import { useAITokenRating } from '../../hooks/useAI';
+import { getAITokenRating } from '../../services/groq';
 import {
   formatCompact,
   formatPercent,
@@ -39,7 +41,7 @@ function buildTokenContext(
   const lines = [
     `Token: ${token.name} (${token.symbol})`,
     `Mint: ${token.mint}`,
-    `Market Cap: ${overview?.marketCap ? `$${overview.marketCap.toFixed(0)}` : `$${token.usdMarketCap.toFixed(0)}`}`,
+    `Market Cap: ${overview?.marketCap ? `$${overview.marketCap.toFixed(0)}` : 'unknown'}`,
     `Price: ${overview?.price ? `$${overview.price.toExponential(4)}` : 'unknown'}`,
     `Volume 24h: ${overview?.volume24h ? `$${overview.volume24h.toFixed(0)}` : 'unknown'}`,
     `Liquidity: ${overview?.liquidity ? `$${overview.liquidity.toFixed(0)}` : 'unknown'}`,
@@ -48,7 +50,6 @@ function buildTokenContext(
   ];
   if (rugFilter) {
     lines.push(`Rug Score: ${rugFilter.rugScore}/100`);
-    lines.push(`Rug Verdict: ${rugFilter.verdict}`);
     rugFilter.breakdown.forEach((item) => {
       lines.push(`  ${item.safe ? '✓' : '✗'} ${item.label}: ${item.detail}`);
     });
@@ -63,13 +64,12 @@ export default function TokenDetailScreen() {
   const wallet = useWallet();
   const sniper = useSniper(wallet.publicKey, wallet.signTransaction);
 
-  const { rate: rateToken } = useAITokenRating();
   const [token, setToken] = useState<FeedToken | null>(null);
   const [overview, setOverview] = useState<TokenOverview | null>(null);
   const [rugFilter, setRugFilter] = useState<RugFilterResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [showSnipeSheet, setShowSnipeSheet] = useState(false);
-  const [isSell, setIsSell] = useState(false);
+  const [showSellSheet, setShowSellSheet] = useState(false);
 
   const load = useCallback(async () => {
     if (!mint) return;
@@ -106,6 +106,7 @@ export default function TokenDetailScreen() {
         aiRatingLoading: true,
         creatorDumped: false,
         creatorDumpPct: 0,
+        fromCache: false,
       };
 
       setToken(feedToken);
@@ -113,31 +114,6 @@ export default function TokenDetailScreen() {
 
       navigation.setOptions({ title: `${feedToken.symbol} · ${feedToken.name}` });
 
-      // Load rug filter
-      const rf = await runRugFilter(mint, feedToken.creatorAddress);
-      setRugFilter(rf);
-      setToken((prev) => prev ? { ...prev, rugFilter: rf, rugFilterLoading: false } : prev);
-
-      // Run AI rating after rug filter
-      void rateToken(mint, {
-        name: feedToken.name,
-        symbol: feedToken.symbol,
-        description: feedToken.description ?? '',
-        rugScore: rf.rugScore,
-        mintAuthorityRevoked: rf.mintAuthorityRevoked,
-        freezeAuthorityRevoked: rf.freezeAuthorityRevoked,
-        lpLocked: rf.lpLocked,
-        top10HolderPercent: rf.top10HolderPercent,
-        creatorSoldAll: rf.creatorSoldAll,
-        solInBondingCurve: feedToken.solInCurve,
-        usdMarketCap: feedToken.usdMarketCap,
-        liquidity: ov?.liquidity,
-        volume24h: ov?.volume24h,
-        holders: ov?.holders,
-        priceChange1h: ov?.priceChange1h,
-      }).then((aiRating) => {
-        setToken((prev) => prev ? { ...prev, aiRating: aiRating ?? null, aiRatingLoading: false } : prev);
-      });
     } catch {
       // silently fail
     } finally {
@@ -154,6 +130,74 @@ export default function TokenDetailScreen() {
     }, 5000);
     return () => clearInterval(interval);
   }, [load, mint]);
+
+  useEffect(() => {
+    if (!mint || !token) return;
+
+    let cancelled = false;
+    setToken((prev) => prev ? { ...prev, rugFilterLoading: true, aiRatingLoading: true } : prev);
+
+    runRugFilter(mint, token.creatorAddress)
+      .then((rf) => {
+        if (cancelled) return;
+
+        setRugFilter(rf);
+
+        setToken((prev) => prev ? {
+          ...prev,
+          rugFilter: rf,
+          rugFilterLoading: false,
+          aiRatingLoading: true,
+        } : prev);
+
+        void getAITokenRating({
+          name: token.name,
+          symbol: token.symbol,
+          description: token.description ?? '',
+          rugScore: rf.rugScore,
+          mintAuthorityRevoked: rf.mintAuthorityRevoked,
+          freezeAuthorityRevoked: rf.freezeAuthorityRevoked,
+          lpLocked: rf.lpLocked,
+          top10HolderPercent: rf.top10HolderPercent,
+          creatorSoldAll: rf.creatorSoldAll,
+          solInBondingCurve: token.solInCurve,
+          usdMarketCap: overview?.marketCap ?? token.usdMarketCap,
+          liquidity: overview?.liquidity,
+          volume24h: overview?.volume24h,
+          holders: overview?.holders,
+          priceChange1h: overview?.priceChange1h,
+        }).then((aiRating) => {
+          if (cancelled) return;
+          setToken((prev) => prev ? { ...prev, aiRating: aiRating ?? null, aiRatingLoading: false } : prev);
+        }).catch(() => {
+          if (cancelled) return;
+          setToken((prev) => prev ? { ...prev, aiRating: null, aiRatingLoading: false } : prev);
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRugFilter(null);
+        setToken((prev) => prev ? { ...prev, rugFilterLoading: false, aiRatingLoading: false } : prev);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    mint,
+    overview?.holders,
+    overview?.liquidity,
+    overview?.marketCap,
+    overview?.priceChange1h,
+    overview?.volume24h,
+    token?.creatorAddress,
+    token?.description,
+    token?.mint,
+    token?.name,
+    token?.solInCurve,
+    token?.symbol,
+    token?.usdMarketCap,
+  ]);
 
   const openLink = async (url: string) => {
     if (!url) return;
@@ -200,7 +244,7 @@ export default function TokenDetailScreen() {
             <Text style={styles.tokenName}>{token.name}</Text>
             <Text style={styles.tokenSymbol}>${token.symbol}</Text>
           </View>
-          <RugScoreBadge rugFilter={rugFilter} loading={!rugFilter} size="medium" />
+          <RugScoreBadge rugFilter={rugFilter} loading={token.rugFilterLoading} size="medium" />
         </View>
 
         {/* Price chart */}
@@ -228,7 +272,7 @@ export default function TokenDetailScreen() {
           <View style={styles.statCell}>
             <Text style={styles.statLabel}>Market Cap</Text>
             <Text style={styles.statValue}>
-              ${formatCompact(overview?.marketCap ?? token.usdMarketCap)}
+              {overview?.marketCap ? `$${formatCompact(overview.marketCap)}` : '—'}
             </Text>
           </View>
           <View style={styles.statCell}>
@@ -334,23 +378,29 @@ export default function TokenDetailScreen() {
       <View style={styles.actionBar}>
         <TouchableOpacity
           style={[styles.actionBtn, styles.buyBtn]}
-          onPress={() => {
-            setIsSell(false);
-            setShowSnipeSheet(true);
-          }}
+          onPress={() => setShowSnipeSheet(true)}
           activeOpacity={0.8}
         >
           <Text style={styles.actionBtnText}>⚡ Buy</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.actionBtn, styles.sellBtn]}
-          onPress={() => {
-            setIsSell(true);
-            setShowSnipeSheet(true);
-          }}
+          onPress={() => setShowSellSheet(true)}
           activeOpacity={0.8}
         >
           <Text style={styles.actionBtnText}>Sell</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.actionBtn, styles.shareBtn]}
+          onPress={() => {
+            void Share.share({
+              message: `Check out ${token.name} ($${token.symbol}) on SniperShot!\nhttps://pump.fun/${token.mint}`,
+              title: `${token.name} on SniperShot`,
+            });
+          }}
+          activeOpacity={0.8}
+        >
+          <Feather name="share-2" size={16} color="#7e8a99" />
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.actionBtn, styles.aiBtn]}
@@ -368,7 +418,7 @@ export default function TokenDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Snipe sheet */}
+      {/* Buy sheet */}
       {showSnipeSheet && (
         <SnipeSheet
           token={token}
@@ -379,6 +429,17 @@ export default function TokenDetailScreen() {
           connected={wallet.connected}
         />
       )}
+
+      {/* Sell sheet */}
+      <SellSheet
+        token={showSellSheet ? token : null}
+        publicKey={wallet.publicKey}
+        slippageBps={sniper.config.slippageBps}
+        onSell={sniper.sell}
+        isSelling={sniper.isSelling}
+        onClose={() => setShowSellSheet(false)}
+        connected={wallet.connected}
+      />
     </View>
   );
 }
@@ -579,10 +640,19 @@ const styles = StyleSheet.create({
     borderColor: '#9945ff66',
     flexDirection: 'row',
     gap: 6,
+    flex: undefined,
+    paddingHorizontal: 16,
   },
   aiBtnText: {
     color: '#9945ff',
     fontSize: 14,
     fontWeight: '700',
+  },
+  shareBtn: {
+    backgroundColor: '#12121a',
+    borderWidth: 1,
+    borderColor: '#1e1e2e',
+    flex: undefined,
+    paddingHorizontal: 14,
   },
 });

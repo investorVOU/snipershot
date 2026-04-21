@@ -11,7 +11,7 @@ import { useColors } from "../hooks/useColors";
 import { useTokenVotes } from "../hooks/useTokenVotes";
 import type { FeedToken } from "../hooks/useTokenFeed";
 import type { AITokenRating } from "../services/groq";
-import { formatAge, formatMarketCap, formatSOLFromSol, toHttpUrl } from "../utils/format";
+import { formatAge, formatMarketCap, toHttpUrl } from "../utils/format";
 
 interface Props {
   token: FeedToken;
@@ -27,19 +27,13 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched, style }
   const [verdictModal, setVerdictModal] = useState<AITokenRating | null>(null);
   const { votes, vote } = useTokenVotes(token.mint);
 
-  // Determine sparkline color from price direction
   const sparkData = token.sparklineData ?? [];
   const sparkColor = sparkData.length >= 2
     ? sparkData[sparkData.length - 1] >= sparkData[0] ? "#14f195" : "#ef4444"
     : "#9945ff";
 
-  // Effective market cap — prefer usd, fall back to SOL-based
-  const mc = token.usdMarketCap > 0
-    ? token.usdMarketCap
-    : token.overview?.marketCap ?? 0;
-
-  // Effective liquidity — prefer Birdeye USD, fall back to bonding curve SOL display
-  const hasLiquidityUSD = (token.overview?.liquidity ?? 0) > 0;
+  const mc = token.overview?.marketCap ?? token.usdMarketCap ?? 0;
+  const liquidity = token.overview?.liquidity ?? 0;
 
   return (
     <>
@@ -48,16 +42,14 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched, style }
         onPress={onPress}
         activeOpacity={0.85}
       >
-        {/* ── Top row: avatar · name/stats · sparkline ── */}
+        {/* Top row: avatar · name/stats · sparkline */}
         <View style={styles.row}>
           <Image
             source={{ uri: toHttpUrl(token.imageUri) || undefined }}
             style={styles.avatar}
             contentFit="cover"
             transition={200}
-            placeholder={{ thumbhash: undefined }}
           />
-
           <View style={styles.info}>
             <View style={styles.nameRow}>
               <Text style={[styles.name, { color: colors.foreground }]} numberOfLines={1}>
@@ -67,26 +59,23 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched, style }
                 ${token.symbol}
               </Text>
             </View>
-
             <View style={styles.statsRow}>
               <Text style={[styles.age, { color: colors.mutedForeground }]}>
                 {formatAge(token.createdTimestamp)}
               </Text>
-
               <View style={[styles.statPill, { backgroundColor: colors.muted }]}>
                 <Text style={[styles.statText, { color: colors.mutedForeground }]}>
-                  MC {formatMarketCap(mc)}
+                  MC {mc > 0 ? formatMarketCap(mc) : "—"}
                 </Text>
               </View>
-
-              <View style={[styles.statPill, { backgroundColor: colors.muted }]}>
-                <Feather name="droplet" size={10} color={colors.mutedForeground} />
-                <Text style={[styles.statText, { color: colors.mutedForeground }]}>
-                  {hasLiquidityUSD
-                    ? formatMarketCap(token.overview!.liquidity!)
-                    : `${formatSOLFromSol(token.solInCurve)} SOL`}
-                </Text>
-              </View>
+              {liquidity > 0 && (
+                <View style={[styles.statPill, { backgroundColor: colors.muted }]}>
+                  <Feather name="droplet" size={10} color={colors.mutedForeground} />
+                  <Text style={[styles.statText, { color: colors.mutedForeground }]}>
+                    {formatMarketCap(liquidity)}
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
 
@@ -95,7 +84,7 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched, style }
           )}
         </View>
 
-        {/* ── Narrative tags (only after rug filter loads) ── */}
+        {/* Narrative tags */}
         {!token.rugFilterLoading && (
           <NarrativeTags
             mint={token.mint}
@@ -105,7 +94,7 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched, style }
           />
         )}
 
-        {/* ── Safety badges ── */}
+        {/* Safety badges */}
         <View style={styles.badgeRow}>
           <RugScoreBadge rugFilter={token.rugFilter} loading={token.rugFilterLoading} size="small" />
           <AIVerdictBadge
@@ -117,7 +106,7 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched, style }
           />
         </View>
 
-        {/* ── Footer: votes · watch · snipe ── */}
+        {/* Footer: votes · watch · snipe */}
         <View style={styles.footer}>
           <View style={styles.voteGroup}>
             <TouchableOpacity
@@ -135,7 +124,6 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched, style }
                 {votes?.upvotes ?? 0}
               </Text>
             </TouchableOpacity>
-
             <TouchableOpacity
               style={[
                 styles.voteBtn,

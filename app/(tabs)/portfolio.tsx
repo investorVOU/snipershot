@@ -18,6 +18,7 @@ import { WalletBadge } from "../../components/WalletBadge";
 import { useColors } from "../../hooks/useColors";
 import { usePortfolio, type EnrichedPosition } from "../../hooks/usePortfolio";
 import { useSniper } from "../../hooks/useSniper";
+import { useTPSL } from "../../hooks/useTPSL";
 import { useWallet } from "../../hooks/useWallet";
 import { formatSOLValue, formatPercent, truncateAddress } from "../../utils/format";
 import type { Trade } from "../../services/tradeLogger";
@@ -28,6 +29,7 @@ export default function PortfolioScreen() {
   const wallet = useWallet();
   const { positions, closedTrades, summary, isLoading, refresh } = usePortfolio();
   const sniper = useSniper(wallet.publicKey, wallet.signTransaction);
+  useTPSL(sniper.config, wallet.publicKey, wallet.signTransaction);
   const [sellingMint, setSellingMint] = useState<string | null>(null);
 
   const topPad = Platform.OS === "web" ? Math.max(insets.top, 67) : insets.top;

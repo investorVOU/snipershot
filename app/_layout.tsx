@@ -1,18 +1,22 @@
 import '../polyfills';
 import 'react-native-reanimated';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import * as SplashScreen from 'expo-splash-screen';
 import Toast from 'react-native-toast-message';
 import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
 import * as BackgroundFetch from 'expo-background-fetch';
-import { StyleSheet } from 'react-native';
-import { canUsePrivyNative, PRIVY_APP_ID, PRIVY_CLIENT_ID } from '../services/privy';
+import * as LocalAuthentication from 'expo-local-authentication';
+import { ActivityIndicator, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { ThemeProvider, useTheme } from '../context/ThemeContext';
 import { WatchlistProvider } from '../context/WatchlistProvider';
+
+// Keep the splash screen visible until we explicitly hide it
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // Configure notifications
 Notifications.setNotificationHandler({
@@ -25,7 +29,6 @@ Notifications.setNotificationHandler({
 
 const BG_PRICE_TASK = 'bg-price-watcher';
 
-// Background task — silently ignored in Expo Go
 try {
   TaskManager.defineTask(BG_PRICE_TASK, async () => {
     try {
@@ -39,7 +42,6 @@ try {
         ? JSON.parse(configRaw)
         : { takeProfitPercent: 100, stopLossPercent: 30 };
 
-      // Check TP/SL for positions
       for (const pos of positions) {
         const currentPrice = await fetchPrice(pos.mint);
         if (currentPrice <= 0) continue;
@@ -48,7 +50,7 @@ try {
         if (currentPrice >= tpPrice) {
           await Notifications.scheduleNotificationAsync({
             content: {
-              title: '🎯 Take Profit Hit!',
+              title: 'Take Profit Hit!',
               body: `${pos.tokenSymbol} reached your TP target`,
               data: { mint: pos.mint, type: 'tp' },
             },
@@ -57,7 +59,7 @@ try {
         } else if (currentPrice <= slPrice) {
           await Notifications.scheduleNotificationAsync({
             content: {
-              title: '🛑 Stop Loss Hit!',
+              title: 'Stop Loss Hit!',
               body: `${pos.tokenSymbol} hit your stop loss`,
               data: { mint: pos.mint, type: 'sl' },
             },
@@ -66,7 +68,6 @@ try {
         }
       }
 
-      // Check price alerts
       const alertsRaw = await AsyncStorage.getItem('snapshot_price_alerts');
       const alerts = alertsRaw ? JSON.parse(alertsRaw) : [];
       let alertsChanged = false;
@@ -75,17 +76,15 @@ try {
         if (alert.triggered) continue;
         const price = await fetchPrice(alert.mint);
         if (price <= 0) continue;
-
         const triggered =
           (alert.direction === 'above' && price >= alert.targetPrice) ||
           (alert.direction === 'below' && price <= alert.targetPrice);
-
         if (triggered) {
           alert.triggered = true;
           alertsChanged = true;
           await Notifications.scheduleNotificationAsync({
             content: {
-              title: `🔔 Price Alert: ${alert.tokenSymbol}`,
+              title: `Price Alert: ${alert.tokenSymbol}`,
               body: `${alert.tokenSymbol} is ${alert.direction === 'above' ? 'above' : 'below'} $${alert.targetPrice}`,
               data: { mint: alert.mint, type: 'price_alert' },
             },
@@ -107,32 +106,9 @@ try {
   // Not available in Expo Go
 }
 
-function AppProviders({ children }: { children: React.ReactNode }) {
-  if (canUsePrivyNative) {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { PrivyProvider } = require('@privy-io/expo') as {
-      PrivyProvider: React.ComponentType<{
-        appId: string;
-        clientId: string;
-        config?: Record<string, unknown>;
-        children: React.ReactNode;
-      }>;
-    };
-    return (
-      <PrivyProvider
-        appId={PRIVY_APP_ID}
-        clientId={PRIVY_CLIENT_ID}
-        config={{ embedded: { solana: { createOnLogin: 'users-without-wallets' } } }}
-      >
-        {children}
-      </PrivyProvider>
-    );
-  }
-  return <>{children}</>;
-}
-
 function ThemedStack() {
   const { colors, isDark } = useTheme();
+
   return (
     <>
       <StatusBar style={isDark ? 'light' : 'dark'} />
@@ -146,6 +122,7 @@ function ThemedStack() {
         }}
       >
         <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding" options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
           name="token/[mint]"
@@ -157,6 +134,33 @@ function ThemedStack() {
 }
 
 export default function RootLayout() {
+  const [biometricPassed, setBiometricPassed] = useState(false);
+  const [biometricFailed, setBiometricFailed] = useState(false);
+
+  const runBiometrics = async () => {
+    setBiometricFailed(false);
+    try {
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+      if (!hasHardware || !isEnrolled) {
+        setBiometricPassed(true);
+        return;
+      }
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: 'Authenticate to open SniperShot',
+        fallbackLabel: 'Use Passcode',
+        disableDeviceFallback: false,
+      });
+      if (result.success) {
+        setBiometricPassed(true);
+      } else {
+        setBiometricFailed(true);
+      }
+    } catch {
+      setBiometricPassed(true);
+    }
+  };
+
   useEffect(() => {
     Notifications.requestPermissionsAsync().catch(() => {});
     BackgroundFetch.registerTaskAsync(BG_PRICE_TASK, {
@@ -164,16 +168,43 @@ export default function RootLayout() {
       stopOnTerminate: false,
       startOnBoot: true,
     }).catch(() => {});
+
+    void runBiometrics();
   }, []);
+
+  // Hide native splash only once biometric gate is resolved
+  useEffect(() => {
+    if (biometricPassed) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [biometricPassed]);
+
+  if (!biometricPassed) {
+    return (
+      <View style={styles.splashRoot}>
+        <View style={styles.splashLogo}>
+          <Image source={require('../assets/icon.png')} style={styles.splashIcon} resizeMode="contain" />
+        </View>
+        <Text style={styles.splashTitle}>SniperShot</Text>
+        <Text style={styles.splashTagline}>Snipe Solana memecoins{'\n'}the moment they launch</Text>
+
+        {biometricFailed ? (
+          <TouchableOpacity style={styles.retryBtn} onPress={runBiometrics} activeOpacity={0.8}>
+            <Text style={styles.retryText}>Unlock App</Text>
+          </TouchableOpacity>
+        ) : (
+          <ActivityIndicator size="small" color="#27c985" style={{ marginTop: 48 }} />
+        )}
+      </View>
+    );
+  }
 
   return (
     <GestureHandlerRootView style={styles.root}>
       <ThemeProvider>
         <WatchlistProvider>
-          <AppProviders>
-            <ThemedStack />
-            <Toast />
-          </AppProviders>
+          <ThemedStack />
+          <Toast />
         </WatchlistProvider>
       </ThemeProvider>
     </GestureHandlerRootView>
@@ -182,4 +213,44 @@ export default function RootLayout() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  splashRoot: {
+    flex: 1,
+    backgroundColor: '#0a0f16',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingHorizontal: 32,
+  },
+  splashLogo: {
+    width: 100,
+    height: 100,
+    borderRadius: 28,
+    backgroundColor: '#121925',
+    borderWidth: 1.5,
+    borderColor: '#2d3745',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  splashIcon: { width: 80, height: 80, borderRadius: 20 },
+  splashTitle: {
+    color: '#f3f6f8',
+    fontSize: 32,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  splashTagline: {
+    color: '#7e8a99',
+    fontSize: 15,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  retryBtn: {
+    marginTop: 40,
+    backgroundColor: '#27c985',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+  },
+  retryText: { color: '#08110d', fontSize: 16, fontWeight: '800' },
 });

@@ -78,7 +78,8 @@ export function useSniper(
       tokenName: string,
       tokenSymbol: string,
       imageUri: string,
-      overrideSOL?: number
+      overrideSOL?: number,
+      overrideSlippageBps?: number
     ): Promise<string | null> => {
       if (!publicKey) {
         Toast.show({ type: 'error', text1: 'Wallet not connected' });
@@ -87,6 +88,7 @@ export function useSniper(
 
       const solAmt = overrideSOL ?? config.solAmount;
       const lamports = solToLamports(solAmt);
+      const slippage = overrideSlippageBps ?? config.slippageBps;
 
       setIsBuying(true);
       try {
@@ -98,7 +100,7 @@ export function useSniper(
             NATIVE_MINT.toBase58(),
             mint,
             lamports,
-            config.slippageBps
+            slippage
           );
           const tx = await buildSwapTransaction(quote, publicKey, config.priorityMode);
           const result = await sendJitoBundle(tx, publicKey, signTransaction);
@@ -108,7 +110,7 @@ export function useSniper(
           const result = await executeBuy(
             mint,
             lamports,
-            config.slippageBps,
+            slippage,
             publicKey,
             signTransaction,
             config.priorityMode

@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { APP_NAME } from '../branding'
 
 interface BrandLogoProps {
@@ -8,6 +9,8 @@ interface BrandLogoProps {
 }
 
 export function BrandLogo({ showWordmark = true, compact = false, name = APP_NAME, className = '' }: BrandLogoProps) {
+  const gradientId = useId()
+  const glowId = useId()
   const markSize = compact ? 36 : 56
   const wrapperClass = compact ? 'flex items-center gap-2.5' : 'flex items-center gap-3'
   const wordmarkClass = compact
@@ -31,17 +34,23 @@ export function BrandLogo({ showWordmark = true, compact = false, name = APP_NAM
           aria-hidden="true"
         >
           <defs>
-            <linearGradient id="solanaBrandGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <linearGradient id={gradientId} x1="8%" y1="8%" x2="92%" y2="92%">
               <stop offset="0%" stopColor="#14f195" />
-              <stop offset="52%" stopColor="#76f3ff" />
+              <stop offset="48%" stopColor="#7bf7ff" />
               <stop offset="100%" stopColor="#9945ff" />
             </linearGradient>
+            <radialGradient id={glowId} cx="50%" cy="28%" r="70%">
+              <stop offset="0%" stopColor="#7bf7ff" stopOpacity="0.45" />
+              <stop offset="100%" stopColor="#7bf7ff" stopOpacity="0" />
+            </radialGradient>
           </defs>
-          <g fill="url(#solanaBrandGradient)">
-            <path d="M18 17.5c0-1.38 1.12-2.5 2.5-2.5h25a2.5 2.5 0 0 1 1.77 4.27L38.9 27.64a2.5 2.5 0 0 1-1.77.73h-25a2.5 2.5 0 0 1-1.77-4.27l8.37-8.37A2.5 2.5 0 0 1 20.5 15h25A2.5 2.5 0 0 1 48 17.5Z" opacity="0.95" />
-            <path d="M18 31.75c0-1.38 1.12-2.5 2.5-2.5h25a2.5 2.5 0 0 1 1.77 4.27l-8.37 8.37a2.5 2.5 0 0 1-1.77.73h-25a2.5 2.5 0 0 1-1.77-4.27l8.37-8.37a2.5 2.5 0 0 1 1.77-.73h25A2.5 2.5 0 0 1 48 31.75Z" opacity="0.82" />
-            <path d="M18 46c0-1.38 1.12-2.5 2.5-2.5h25a2.5 2.5 0 0 1 1.77 4.27l-8.37 8.37a2.5 2.5 0 0 1-1.77.73h-25a2.5 2.5 0 0 1-1.77-4.27l8.37-8.37a2.5 2.5 0 0 1 1.77-.73h25A2.5 2.5 0 0 1 48 46Z" opacity="0.7" />
+          <circle cx="32" cy="18" r="18" fill={`url(#${glowId})`} />
+          <g fill={`url(#${gradientId})`}>
+            <path d="M32 10 49 52H41.8l-3.9-9.9H26.1L22.2 52H15L32 10Zm3.3 25.9L32 27.1l-3.4 8.8h6.7Z" />
+            <path d="M32 20.6a11.4 11.4 0 1 1 0 22.8 11.4 11.4 0 0 1 0-22.8Zm0 4.2a7.2 7.2 0 1 0 0 14.4 7.2 7.2 0 0 0 0-14.4Z" opacity="0.85" />
+            <circle cx="32" cy="32" r="2.35" />
           </g>
+          <path d="M32 14v6M32 44v6M14 32h6M44 32h6" stroke="rgba(123,247,255,0.7)" strokeWidth="1.6" strokeLinecap="round" />
         </svg>
       </div>
       {showWordmark && <span className={wordmarkClass}>{name}</span>}

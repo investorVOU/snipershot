@@ -59,6 +59,7 @@ export function SnipeModal({ token, wallet, positionTokens = 0, onClose, onConfi
   const derivedSellAmt = sellCustom !== ''
     ? parseFloat(sellCustom)
     : hasPosition ? (positionTokens * sellPct) / 100 : 0
+  const cappedSellAmt = hasPosition ? Math.min(derivedSellAmt || 0, positionTokens) : derivedSellAmt
 
   const handleBuy = async () => {
     const sol = parseFloat(buyAmount)
@@ -72,8 +73,9 @@ export function SnipeModal({ token, wallet, positionTokens = 0, onClose, onConfi
 
   const handleSell = async () => {
     if (!onSell) { setError('Sell not available'); return }
-    const amt = derivedSellAmt
+    const amt = cappedSellAmt
     if (!amt || amt <= 0) { setError('Enter an amount to sell'); return }
+    if (hasPosition && derivedSellAmt > positionTokens) { setError(`Max sell amount: ${positionTokens.toFixed(4)} ${token.symbol}`); return }
     setBusy(true); setError('')
     try { await onSell(token.mint, amt, sellSlippage); onClose() }
     catch (e) { setError(e instanceof Error ? e.message : 'Sell failed') }
@@ -209,7 +211,20 @@ export function SnipeModal({ token, wallet, positionTokens = 0, onClose, onConfi
               <input
                 type="number"
                 value={sellCustom !== '' ? sellCustom : hasPosition ? ((positionTokens * sellPct) / 100).toFixed(2) : ''}
-                onChange={(e) => setSellCustom(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value
+                  setSellCustom(next)
+                  if (next === '') {
+                    setError('')
+                    return
+                  }
+                  const parsed = parseFloat(next)
+                  if (hasPosition && Number.isFinite(parsed) && parsed > positionTokens) {
+                    setError(`Max sell amount: ${positionTokens.toFixed(4)} ${token.symbol}`)
+                  } else {
+                    setError('')
+                  }
+                }}
                 className="input pr-16"
                 placeholder="Token amount"
                 min="0"

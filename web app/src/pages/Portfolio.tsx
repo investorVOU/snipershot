@@ -19,6 +19,7 @@ interface Position {
   currentPriceUsd?: number
   currentPriceSOL?: number
   isLoading?: boolean
+  priceUnavailable?: boolean
 }
 
 interface ClosedTrade {
@@ -100,10 +101,11 @@ export function PortfolioPage() {
             setPositions((prev) => prev.map((p) => p.mint === pos.mint ? {
               ...p,
               currentPriceUsd: priceUsd,
+              priceUnavailable: priceUsd <= 0,
               isLoading: false,
             } : p))
           }).catch(() => {
-            setPositions((prev) => prev.map((p) => p.mint === pos.mint ? { ...p, isLoading: false } : p))
+            setPositions((prev) => prev.map((p) => p.mint === pos.mint ? { ...p, isLoading: false, priceUnavailable: true } : p))
           })
         })
 
@@ -315,6 +317,11 @@ Respond ONLY with JSON: {"health":"STRONG"|"NEUTRAL"|"WEAK","action":"HOLD"|"TAK
                         <MetaItem label="Current" value={pos.isLoading ? '…' : pos.currentPriceSOL ? pos.currentPriceSOL.toExponential(2) : '—'} />
                         <MetaItem label="Cost" value={formatSol(pos.amountSOLSpent)} />
                       </div>
+                      {pos.priceUnavailable && (
+                        <div className="text-[11px] font-semibold text-yellow-400">
+                          Current price unavailable. PnL is partial until pricing recovers.
+                        </div>
+                      )}
                       <button
                         onClick={() => void handleSellAll(pos)}
                         className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-red-500/40 bg-red-500/10 text-red-400 text-sm font-bold hover:bg-red-500/20 transition-colors"

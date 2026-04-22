@@ -153,13 +153,11 @@ async function getSPLBalances(address: string, userId?: string): Promise<SPLBala
 
 async function getTxHistory(address: string): Promise<TxItem[]> {
   const heliusKey = import.meta.env.VITE_HELIUS_API_KEY
-  if (!heliusKey) return []
-  try {
-    const res = await fetch(`https://api.helius.xyz/v0/addresses/${address}/transactions?api-key=${heliusKey}&limit=20`)
-    if (!res.ok) return []
-    const data = await res.json() as Array<{ signature: string; type: string; timestamp: number; fee: number; description?: string }>
-    return data.map((t) => ({ signature: t.signature, type: t.type ?? 'UNKNOWN', timestamp: t.timestamp * 1000, fee: t.fee ?? 0, description: t.description }))
-  } catch { return [] }
+  if (!heliusKey) throw new Error('Missing Helius API key')
+  const res = await fetch(`https://api.helius.xyz/v0/addresses/${address}/transactions?api-key=${heliusKey}&limit=20`)
+  if (!res.ok) throw new Error(`Transaction history unavailable (${res.status})`)
+  const data = await res.json() as Array<{ signature: string; type: string; timestamp: number; fee: number; description?: string }>
+  return data.map((t) => ({ signature: t.signature, type: t.type ?? 'UNKNOWN', timestamp: t.timestamp * 1000, fee: t.fee ?? 0, description: t.description }))
 }
 
 function QRCodeDisplay({ value }: { value: string }) {
@@ -205,7 +203,7 @@ function ExportKeyModal({ wallet, onClose }: { wallet: NonNullable<ReturnType<ty
               <AlertTriangle size={18} className="text-red-400 flex-shrink-0 mt-0.5" />
               <div className="text-red-300 text-sm leading-relaxed">
                 <p className="font-bold mb-1">Never share your private key</p>
-                <p>Anyone with this key has full control of your wallet and all funds. Solmint will never ask for it.</p>
+                <p>Anyone with this key has full control of your wallet and all funds. Axyrion will never ask for it.</p>
               </div>
             </div>
             <p className="text-dark-subtext text-sm">Your private key can be imported into Phantom, Backpack, or any Solana wallet. Store it somewhere safe and offline.</p>
@@ -256,6 +254,7 @@ export function WalletPage() {
   const [pinnedBalances, setPinnedBalances] = useState<Record<string, number>>({})
   const [splBalances, setSplBalances] = useState<SPLBalance[]>([])
   const [txHistory, setTxHistory] = useState<TxItem[]>([])
+  const [txHistoryError, setTxHistoryError] = useState('')
   const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState(false)
   const [showQR, setShowQR] = useState(false)
@@ -271,11 +270,17 @@ export function WalletPage() {
   const loadData = useCallback(async () => {
     if (!walletAddress) return
     setLoading(true)
+    setTxHistoryError('')
     try {
+      const txHistoryPromise = getTxHistory(walletAddress).catch((error) => {
+        setTxHistoryError(error instanceof Error ? error.message : 'Unable to load transactions')
+        return []
+      })
+
       const [sol, spls, txs, price, ...pinnedAmounts] = await Promise.all([
         getSolBalance(walletAddress),
         getSPLBalances(walletAddress, userId),
-        getTxHistory(walletAddress),
+        txHistoryPromise,
         fetchSOLPrice(),
         ...PINNED_TOKENS.map((t) => getTokenBalance(walletAddress, t.mint)),
       ])
@@ -394,7 +399,7 @@ export function WalletPage() {
             <div className="flex items-center gap-2 mb-3">
               <div className="w-2 h-2 rounded-full bg-brand animate-pulse" />
               <span className="text-dark-subtext text-xs font-semibold">Embedded Wallet</span>
-              <span className="ml-auto text-dark-faint text-[10px] font-semibold uppercase tracking-wide">Solmint</span>
+              <span className="ml-auto text-dark-faint text-[10px] font-semibold uppercase tracking-wide">Axyrion</span>
             </div>
             <div className="flex items-center gap-2 mb-3">
               <span className="text-dark-text font-mono text-sm flex-1 truncate">{shortenAddress(walletAddress, 10)}</span>
@@ -507,6 +512,12 @@ export function WalletPage() {
         )}
 
         {/* Tx history */}
+        {txHistoryError && (
+          <div>
+            <h2 className="text-dark-subtext text-xs font-bold tracking-widest uppercase mb-2">Recent Transactions</h2>
+            <div className="card p-3 text-sm text-yellow-400 font-semibold">Unable to load transactions</div>
+          </div>
+        )}
         {txHistory.length > 0 && (
           <div>
             <h2 className="text-dark-subtext text-xs font-bold tracking-widest uppercase mb-2">Recent Transactions</h2>

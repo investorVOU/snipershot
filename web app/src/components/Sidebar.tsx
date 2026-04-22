@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import { Zap, BarChart2, Star, Wallet, Trophy, Settings, LogOut, LogIn } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { BrandLogo } from './BrandLogo'
 
 const NAV = [
   { to: '/feed', Icon: Zap, label: 'Live Feed' },
@@ -18,10 +19,7 @@ export function Sidebar() {
     <aside className="hidden lg:flex flex-col w-[240px] flex-shrink-0 h-screen sticky top-0 bg-dark-card border-r border-dark-border px-3 py-5">
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-3 mb-8">
-        <div className="w-9 h-9 rounded-xl bg-brand/10 border border-brand/20 flex items-center justify-center">
-          <span className="text-brand font-black text-base tracking-tight">S</span>
-        </div>
-        <span className="text-dark-text font-bold text-lg tracking-tight">Solmint</span>
+        <BrandLogo compact />
       </div>
 
       {/* Navigation */}

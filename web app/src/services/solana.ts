@@ -220,7 +220,7 @@ export async function logWebTrade(params: {
   }
 
   const primaryRes = await supabase.from('trades').insert(primary)
-  if (!primaryRes.error) return
+  if (primaryRes.error == null && primaryRes.status >= 200 && primaryRes.status < 300) return
 
   const fallbackRes = await supabase.from('trades').insert(fallback)
   if (fallbackRes.error) throw fallbackRes.error
@@ -250,7 +250,7 @@ export async function openWebPosition(params: {
     created_at: timestamp,
   }
   const primaryRes = await supabase.from('positions').upsert(primary, { onConflict: 'user_pubkey,mint' })
-  if (!primaryRes.error) return
+  if (primaryRes.error == null && primaryRes.status >= 200 && primaryRes.status < 300) return
 
   const fallback = {
     mint: params.mint,
@@ -271,7 +271,7 @@ export async function openWebPosition(params: {
 
 export async function closeWebPosition(userId: string, mint: string): Promise<void> {
   const primaryRes = await supabase.from('positions').delete().eq('user_pubkey', userPubkeyForSupabase(userId)).eq('mint', mint)
-  if (!primaryRes.error) return
+  if (primaryRes.error == null && primaryRes.status >= 200 && primaryRes.status < 300) return
 
   const fallbackRes = await supabase
     .from('positions')

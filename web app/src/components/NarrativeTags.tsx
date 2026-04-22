@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { groqChat } from '../services/groqChat'
 
 interface NarrativeResult {
@@ -24,11 +24,13 @@ interface Props {
 
 export function NarrativeTags({ mint, name, symbol, description }: Props) {
   const [result, setResult] = useState<NarrativeResult | null>(cache.get(mint) ?? null)
-  const ran = useRef(false)
 
   useEffect(() => {
-    if (result || ran.current) return
-    ran.current = true
+    setResult(cache.get(mint) ?? null)
+  }, [mint])
+
+  useEffect(() => {
+    if (result) return
 
     const prompt = `Analyze this Solana memecoin and return JSON only.
 Token: ${name} ($${symbol})

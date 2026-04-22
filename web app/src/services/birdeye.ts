@@ -143,12 +143,6 @@ interface BirdeyeHolderResp {
   }
 }
 
-interface RpcTokenAccountsResp {
-  result?: {
-    value?: Array<unknown>
-  }
-}
-
 interface BirdeyeOHLCVResp {
   data?: {
     items?: Array<{

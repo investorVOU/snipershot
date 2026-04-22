@@ -4,6 +4,8 @@ import { Mail, Globe, Eye, Loader2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { supabase } from '../services/supabase'
+import { BrandLogo } from '../components/BrandLogo'
+import { APP_NAME, APP_TAGLINE } from '../branding'
 
 type Mode = 'login' | 'signup'
 
@@ -89,10 +91,10 @@ export function LoginPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ backgroundColor: colors.bg }}>
-        <div className="w-24 h-24 rounded-[28px] flex items-center justify-center" style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}>
-          <span className="text-brand font-black text-5xl tracking-tight">S</span>
+        <div className="rounded-[32px] p-2" style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}>
+          <BrandLogo showWordmark={false} />
         </div>
-        <span className="text-dark-text font-extrabold text-3xl tracking-tight">Solmint</span>
+        <span className="text-dark-text font-extrabold text-3xl tracking-tight">{APP_NAME}</span>
         <Loader2 size={24} className="text-brand animate-spin mt-4" />
       </div>
     )
@@ -103,12 +105,12 @@ export function LoginPage() {
       <div className="w-full max-w-sm flex flex-col gap-6">
         {/* Hero */}
         <div className="flex flex-col items-center gap-3">
-          <div className="w-24 h-24 rounded-[28px] flex items-center justify-center shadow-2xl" style={{ backgroundColor: colors.card, border: `1.5px solid ${colors.border}` }}>
-            <span className="text-brand font-black text-5xl tracking-tight">S</span>
+          <div className="rounded-[32px] p-2 shadow-2xl" style={{ backgroundColor: colors.card, border: `1.5px solid ${colors.border}` }}>
+            <BrandLogo showWordmark={false} />
           </div>
-          <h1 className="text-dark-text font-extrabold text-[30px] tracking-tight">Solmint</h1>
+          <h1 className="text-dark-text font-extrabold text-[30px] tracking-tight">{APP_NAME}</h1>
           <p className="text-[15px] text-center leading-relaxed" style={{ color: colors.textMuted }}>
-            Snipe Solana memecoins{'\n'}the moment they launch
+            {APP_TAGLINE}
           </p>
         </div>
 

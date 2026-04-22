@@ -1,7 +1,6 @@
 import type { AITokenRating } from '../types'
 
 const GROQ_PROXY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/groq-proxy`
-const GROQ_DIRECT_URL = 'https://api.groq.com/openai/v1/chat/completions'
 const GROQ_MODELS = ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile']
 
 async function fetchWithTimeout(url: string, options: RequestInit, ms: number): Promise<Response> {
@@ -28,29 +27,10 @@ async function groqChat(messages: Array<{ role: string; content: string }>, maxT
         const json = await res.json() as { choices: Array<{ message: { content: string } }> }
         return json.choices[0]?.message?.content ?? ''
       }
-    } catch { /* try direct */ }
-
-    const apiKey = import.meta.env.VITE_GROQ_API_KEY ?? ''
-    if (!apiKey) continue
-
-    try {
-      const res = await fetchWithTimeout(
-        GROQ_DIRECT_URL,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-          body: body(model),
-        },
-        15000
-      )
-      if (res.ok) {
-        const json = await res.json() as { choices: Array<{ message: { content: string } }> }
-        return json.choices[0]?.message?.content ?? ''
-      }
     } catch { /* continue */ }
   }
 
-  throw new Error('Groq: all models unavailable')
+  throw new Error('Groq proxy unavailable')
 }
 
 export async function getAITokenRating(

@@ -12,10 +12,10 @@ export function TickerBar({ tokens }: Props) {
   const { colors } = useTheme()
   const items = tokens.slice(0, 12)
   const doubled = [...items, ...items]
-  const containerRef = useRef<HTMLDivElement>(null)
   const posRef = useRef(0)
   const halfWidth = items.length * ITEM_WIDTH
   const animRef = useRef<number>(0)
+  const trackRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (items.length === 0) return
@@ -26,8 +26,8 @@ export function TickerBar({ tokens }: Props) {
       last = now
       posRef.current += (dt / 1000) * 60
       if (posRef.current >= halfWidth) posRef.current = 0
-      if (containerRef.current) {
-        containerRef.current.scrollLeft = posRef.current
+      if (trackRef.current) {
+        trackRef.current.style.transform = `translateX(-${posRef.current}px)`
       }
       animRef.current = requestAnimationFrame(tick)
     }
@@ -43,12 +43,8 @@ export function TickerBar({ tokens }: Props) {
         <span className="w-1.5 h-1.5 rounded-full bg-brand pulse-dot" />
         <span className="text-brand text-[9px] font-extrabold tracking-widest">LIVE</span>
       </div>
-      <div
-        ref={containerRef}
-        className="flex overflow-hidden"
-        style={{ scrollBehavior: 'auto', overflowX: 'hidden' }}
-      >
-        <div className="flex" style={{ width: doubled.length * ITEM_WIDTH }}>
+      <div className="flex overflow-hidden" style={{ overflowX: 'hidden' }}>
+        <div ref={trackRef} className="flex will-change-transform" style={{ width: doubled.length * ITEM_WIDTH }}>
           {doubled.map((token, i) => {
             const change = token.overview?.priceChange24h ?? 0
             const price = token.overview?.price ?? 0

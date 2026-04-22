@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowLeft, ExternalLink, Twitter, Globe, MessageCircle, Crosshair, Star, Users, Bot, Send, X } from 'lucide-react'
 import type { FeedToken, AITokenRating, TokenOverview } from '../types'
@@ -171,41 +171,31 @@ export function TokenDetailPage() {
       })
   }, [token])
 
-  useEffect(() => {
+  const loadPosition = useCallback(async () => {
     if (!user || !mint) {
       setPositionAmount(0)
       return
     }
 
-    void (async () => {
-      try {
-        const { data } = await supabase
-          .from('positions')
-          .select('*')
-          .eq('user_pubkey', user.id)
-          .eq('mint', mint)
+    try {
+      const { data } = await supabase
+        .from('positions')
+        .select('*')
+        .eq('user_pubkey', user.id)
+        .eq('mint', mint)
 
-        const openRows = ((data as Record<string, unknown>[] | null) ?? []).filter((row) => row.closed !== true)
-        if (openRows.length > 0) {
-          const total = openRows.reduce((sum, row) => sum + Number((row.amount_tokens as number) ?? 0), 0)
-          setPositionAmount(total)
-          return
-        }
-
-        const { data: fallbackRows } = await supabase
-          .from('positions')
-          .select('*')
-          .eq('user_pubkey', user.id)
-          .eq('mint', mint)
-          .eq('closed', false)
-
-        const total = ((fallbackRows as Record<string, unknown>[] | null) ?? []).reduce((sum, row) => sum + Number((row.amount_tokens as number) ?? 0), 0)
-        setPositionAmount(total)
-      } catch {
-        setPositionAmount(0)
-      }
-    })()
+      const total = ((data as Record<string, unknown>[] | null) ?? [])
+        .filter((row) => row.closed !== true)
+        .reduce((sum, row) => sum + Number((row.amount_tokens as number) ?? 0), 0)
+      setPositionAmount(total)
+    } catch {
+      setPositionAmount(0)
+    }
   }, [mint, user])
+
+  useEffect(() => {
+    void loadPosition()
+  }, [loadPosition])
 
   if (loading) {
     return (
@@ -473,7 +463,7 @@ export function TokenDetailPage() {
         }}
         onSell={async (mint, amountTokens, slippage) => {
           if (!user || !wallet) { openAuthModal(); throw new Error('Sign in to sell') }
-          await sellTokenForUser({
+          const txSig = await sellTokenForUser({
             wallet,
             userId: user.id,
             mint,
@@ -483,7 +473,8 @@ export function TokenDetailPage() {
             amountTokens,
             slippageBps: slippage * 100,
           })
-          setPositionAmount(0)
+          if (!txSig) throw new Error('Sell did not return a transaction signature')
+          await loadPosition()
         }}
       />
 

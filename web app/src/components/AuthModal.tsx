@@ -3,6 +3,8 @@ import { X, Mail, Globe, Eye, Loader2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import { supabase } from '../services/supabase'
+import { BrandLogo } from './BrandLogo'
+import { APP_NAME, APP_TAGLINE } from '../branding'
 
 type Mode = 'login' | 'signup'
 
@@ -99,11 +101,11 @@ export function AuthModal({ visible, onClose }: AuthModalProps) {
 
         {/* Hero */}
         <div className="flex flex-col items-center gap-2 pt-1">
-          <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}>
-            <span className="text-brand font-black text-3xl tracking-tight">S</span>
+          <div className="rounded-[28px] p-1.5" style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}>
+            <BrandLogo showWordmark={false} />
           </div>
-          <h2 className="text-dark-text font-extrabold text-xl tracking-tight">Solmint</h2>
-          <p className="text-dark-subtext text-xs text-center">Snipe Solana memecoins the moment they launch</p>
+          <h2 className="text-dark-text font-extrabold text-xl tracking-tight">{APP_NAME}</h2>
+          <p className="text-dark-subtext text-xs text-center">{APP_TAGLINE}</p>
         </div>
 
         {/* Mode toggle */}

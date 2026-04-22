@@ -11,7 +11,6 @@ import { WatchlistPage } from './pages/Watchlist'
 import { WalletPage } from './pages/Wallet'
 import { LeaderboardPage } from './pages/Leaderboard'
 import { SettingsPage } from './pages/Settings'
-import { DebugPage } from './pages/DebugPage'
 import { ChartDemoPage } from './pages/ChartDemoPage'
 
 const ONBOARDING_KEY = 'snipershot_onboarding_done'
@@ -34,7 +33,6 @@ function AppRoutes() {
           <Route path="wallet" element={<WalletPage />} />
           <Route path="leaderboard" element={<LeaderboardPage />} />
           <Route path="settings" element={<SettingsPage />} />
-          <Route path="debug" element={<DebugPage />} />
           <Route path="chart-demo" element={<ChartDemoPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/feed" replace />} />

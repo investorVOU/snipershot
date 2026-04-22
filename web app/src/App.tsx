@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { ThemeProvider } from './context/ThemeContext'
@@ -12,6 +13,7 @@ import { WalletPage } from './pages/Wallet'
 import { LeaderboardPage } from './pages/Leaderboard'
 import { SettingsPage } from './pages/Settings'
 import { ChartDemoPage } from './pages/ChartDemoPage'
+import { APP_META_DESCRIPTION, APP_META_TITLE } from './branding'
 
 const ONBOARDING_KEY = 'snipershot_onboarding_done'
 
@@ -43,6 +45,14 @@ function AppRoutes() {
 }
 
 export default function App() {
+  useEffect(() => {
+    document.title = APP_META_TITLE
+    const descriptionTag = document.querySelector('meta[name="description"]')
+    if (descriptionTag) {
+      descriptionTag.setAttribute('content', APP_META_DESCRIPTION)
+    }
+  }, [])
+
   return (
     <BrowserRouter>
       <ThemeProvider>

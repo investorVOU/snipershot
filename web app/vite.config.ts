@@ -27,6 +27,17 @@ export default defineConfig(({ mode }) => ({
   build: {
     rollupOptions: {
       output: {
+        entryFileNames: 'assets/index.js',
+        chunkFileNames: (chunkInfo) => {
+          if (chunkInfo.name === 'vendor') return 'assets/vendor.js'
+          if (chunkInfo.name === 'supabase') return 'assets/supabase.js'
+          if (chunkInfo.name === 'charts') return 'assets/charts.js'
+          return 'assets/[name].js'
+        },
+        assetFileNames: (assetInfo) => {
+          if (assetInfo.name?.endsWith('.css')) return 'assets/styles.css'
+          return 'assets/[name][extname]'
+        },
         manualChunks: {
           vendor: ['react', 'react-dom', 'react-router-dom'],
           supabase: ['@supabase/supabase-js'],

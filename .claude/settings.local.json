@@ -53,7 +53,15 @@
       "Bash(npx supabase *)",
       "Bash(eas --version)",
       "Bash(eas whoami *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(where supabase *)",
+      "Bash(supabase --version)",
+      "Bash(supabase login *)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(supabase projects *)",
+      "Bash(supabase link *)",
+      "Bash(supabase functions *)",
+      "Bash(supabase secrets *)"
     ]
   }
 }

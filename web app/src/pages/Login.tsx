@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Mail, Globe, Eye, Loader2, Crosshair } from 'lucide-react'
+import { Mail, Globe, Eye, Loader2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
 import { supabase } from '../services/supabase'
 
 type Mode = 'login' | 'signup'
@@ -11,6 +12,7 @@ const ONBOARDING_KEY = 'snipershot_onboarding_done'
 export function LoginPage() {
   const navigate = useNavigate()
   const { user, isGuest, isLoading, signInWithEmail, signUpWithEmail, signInWithGoogle, signInWithTwitter, continueAsGuest } = useAuth()
+  const { colors } = useTheme()
 
   const [mode, setMode] = useState<Mode>('login')
   const [email, setEmail] = useState('')
@@ -86,26 +88,26 @@ export function LoginPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[#0a0f16] flex flex-col items-center justify-center gap-4">
-        <div className="w-24 h-24 rounded-[28px] bg-[#121925] border border-[#2d3745] flex items-center justify-center">
-          <Crosshair size={48} className="text-brand" />
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ backgroundColor: colors.bg }}>
+        <div className="w-24 h-24 rounded-[28px] flex items-center justify-center" style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}>
+          <span className="text-brand font-black text-5xl tracking-tight">S</span>
         </div>
-        <span className="text-dark-text font-extrabold text-3xl tracking-tight">SniperShot</span>
+        <span className="text-dark-text font-extrabold text-3xl tracking-tight">Solmint</span>
         <Loader2 size={24} className="text-brand animate-spin mt-4" />
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0f16] flex items-center justify-center px-6 py-12">
+    <div className="min-h-screen flex items-center justify-center px-6 py-12" style={{ backgroundColor: colors.bg }}>
       <div className="w-full max-w-sm flex flex-col gap-6">
         {/* Hero */}
         <div className="flex flex-col items-center gap-3">
-          <div className="w-24 h-24 rounded-[28px] bg-[#121925] border-[1.5px] border-[#2d3745] flex items-center justify-center shadow-2xl">
-            <Crosshair size={44} className="text-brand" />
+          <div className="w-24 h-24 rounded-[28px] flex items-center justify-center shadow-2xl" style={{ backgroundColor: colors.card, border: `1.5px solid ${colors.border}` }}>
+            <span className="text-brand font-black text-5xl tracking-tight">S</span>
           </div>
-          <h1 className="text-dark-text font-extrabold text-[30px] tracking-tight">SniperShot</h1>
-          <p className="text-[#7e8a99] text-[15px] text-center leading-relaxed">
+          <h1 className="text-dark-text font-extrabold text-[30px] tracking-tight">Solmint</h1>
+          <p className="text-[15px] text-center leading-relaxed" style={{ color: colors.textMuted }}>
             Snipe Solana memecoins{'\n'}the moment they launch
           </p>
         </div>
@@ -113,14 +115,15 @@ export function LoginPage() {
         {/* Form */}
         <div className="flex flex-col gap-2.5">
           {/* Mode toggle */}
-          <div className="flex bg-[#121925] rounded-xl p-1 gap-1">
+          <div className="flex rounded-xl p-1 gap-1" style={{ backgroundColor: colors.card }}>
             {(['login', 'signup'] as Mode[]).map((m) => (
               <button
                 key={m}
                 onClick={() => { setMode(m); setError(''); setInfo('') }}
                 className={`flex-1 py-[9px] rounded-[10px] text-sm font-semibold transition-colors ${
-                  mode === m ? 'bg-brand text-[#08110d]' : 'text-[#7e8a99]'
+                  mode === m ? 'bg-brand text-[#08110d]' : ''
                 }`}
+                style={mode === m ? undefined : { color: colors.textMuted }}
               >
                 {m === 'login' ? 'Sign In' : 'Create Account'}
               </button>
@@ -171,9 +174,9 @@ export function LoginPage() {
 
         {/* Divider */}
         <div className="flex items-center gap-3">
-          <div className="flex-1 h-px bg-[#202b38]" />
-          <span className="text-[#475261] text-xs">or continue with</span>
-          <div className="flex-1 h-px bg-[#202b38]" />
+          <div className="flex-1 h-px" style={{ backgroundColor: colors.border }} />
+          <span className="text-xs" style={{ color: colors.textMuted }}>or continue with</span>
+          <div className="flex-1 h-px" style={{ backgroundColor: colors.border }} />
         </div>
 
         {/* Social */}
@@ -181,14 +184,16 @@ export function LoginPage() {
           <button
             onClick={handleGoogle}
             disabled={busy}
-            className="flex-1 flex items-center justify-center gap-2 bg-[#121925] border border-[#202b38] rounded-xl py-3.5 text-[#dce1e6] text-sm font-semibold hover:bg-[#1a2535] transition-colors disabled:opacity-50"
+            className="flex-1 flex items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-semibold transition-colors disabled:opacity-50"
+            style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, color: colors.textSub }}
           >
             <Globe size={16} /> Google
           </button>
           <button
             onClick={handleTwitter}
             disabled={busy}
-            className="flex-1 flex items-center justify-center gap-2 bg-[#121925] border border-[#202b38] rounded-xl py-3.5 text-[#dce1e6] text-sm font-semibold hover:bg-[#1a2535] transition-colors disabled:opacity-50"
+            className="flex-1 flex items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-semibold transition-colors disabled:opacity-50"
+            style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}`, color: colors.textSub }}
           >
             <span className="font-extrabold text-base leading-none">𝕏</span> Twitter / X
           </button>
@@ -196,9 +201,9 @@ export function LoginPage() {
 
         {/* Divider */}
         <div className="flex items-center gap-3">
-          <div className="flex-1 h-px bg-[#202b38]" />
-          <span className="text-[#475261] text-xs">or</span>
-          <div className="flex-1 h-px bg-[#202b38]" />
+          <div className="flex-1 h-px" style={{ backgroundColor: colors.border }} />
+          <span className="text-xs" style={{ color: colors.textMuted }}>or</span>
+          <div className="flex-1 h-px" style={{ backgroundColor: colors.border }} />
         </div>
 
         {/* Guest */}
@@ -209,7 +214,7 @@ export function LoginPage() {
           <Eye size={16} /> Browse as Guest
         </button>
 
-        <p className="text-[#3c4653] text-[10px] text-center leading-4">
+        <p className="text-[10px] text-center leading-4" style={{ color: colors.textMuted }}>
           By continuing you accept our Terms of Service.{'\n'}
           0.5% platform fee on all swaps.
         </p>

@@ -12,12 +12,18 @@ import { runRugFilter } from '../services/rugFilter'
 import { getAITokenRating } from '../services/groq'
 import { formatMarketCap, toHttpUrl } from '../services/format'
 import type { FeedToken, FilterMode } from '../types'
+import { useAuth } from '../context/AuthContext'
+import { buyTokenForUser } from '../services/solana'
+import { fetchDexHotTokens, mapDexHotTokenToFeed, type DexHotToken } from '../services/dexscreener'
+import { useTheme } from '../context/ThemeContext'
 
 type FeedTab = 'launches' | 'new' | 'trending'
 type McFilter = 'all' | '5k' | '25k' | '100k'
+type GraduatedFilter = 'all' | 'graduated'
 
 const PAGE_SIZE = 20
 const LAUNCH_MATURITY_MS = 30 * 60 * 1000
+const LAUNCHES_CACHE_KEY = 'solmint_launches_cache'
 
 interface LaunchRow {
   mint: string
@@ -78,6 +84,29 @@ function canRateWithAI(token: FeedToken): boolean {
   return token.rugFilter !== null && token.rugFilter.risk !== 'unknown'
 }
 
+function aiContext(token: FeedToken): string {
+  return [
+    `price=${token.overview?.price ?? 0}`,
+    `marketCap=${token.overview?.marketCap ?? token.usdMarketCap ?? 0}`,
+    `liquidity=${token.overview?.liquidity ?? 0}`,
+    `volume24h=${token.overview?.volume24h ?? 0}`,
+    `holders=${token.overview?.holders ?? 0}`,
+    `ageMs=${Math.max(0, Date.now() - token.createdTimestamp)}`,
+  ].join(', ')
+}
+
+function matchesSearchToken(token: Pick<FeedToken, 'name' | 'symbol' | 'mint'>, query: string): boolean {
+  if (!query) return true
+  const q = query.trim().toLowerCase()
+  return token.name.toLowerCase().includes(q) || token.symbol.toLowerCase().includes(q) || token.mint.toLowerCase().startsWith(q)
+}
+
+function matchesSearchTrending(token: TrendingToken | DexHotToken, query: string): boolean {
+  if (!query) return true
+  const q = query.trim().toLowerCase()
+  return token.name.toLowerCase().includes(q) || token.symbol.toLowerCase().includes(q) || token.address.toLowerCase().startsWith(q)
+}
+
 const RISK_FILTERS: { key: FilterMode; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'safe', label: 'Safe' },
@@ -93,10 +122,12 @@ const MC_FILTERS: { key: McFilter; label: string }[] = [
 ]
 
 export function FeedPage() {
+  const { colors } = useTheme()
   const navigate = useNavigate()
   const [tab, setTab] = useState<FeedTab>('launches')
   const [filterMode, setFilterMode] = useState<FilterMode>('all')
   const [mcFilter, setMcFilter] = useState<McFilter>('all')
+  const [graduatedFilter, setGraduatedFilter] = useState<GraduatedFilter>('all')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [snipeToken, setSnipeToken] = useState<FeedToken | null>(null)
@@ -108,38 +139,103 @@ export function FeedPage() {
   const [launches, setLaunches] = useState<FeedToken[]>([])
   const [launchesLoading, setLaunchesLoading] = useState(false)
   const launchHydQueue = useRef(new Set<string>())
+  const launchesInitialized = useRef(false)
 
   // Trending tab
-  const [trending, setTrending] = useState<TrendingToken[]>([])
+  const [trending, setTrending] = useState<Array<TrendingToken | DexHotToken>>([])
   const [trendingLoading, setTrendingLoading] = useState(false)
 
   const { toggleWatchlist, isWatched } = useWatchlist()
+  const { user, wallet, isGuest, openAuthModal } = useAuth()
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LAUNCHES_CACHE_KEY)
+      if (!raw) return
+      const cached = JSON.parse(raw) as FeedToken[]
+      setLaunches(cached.map((token) => ({ ...token, isNewest: false })))
+    } catch {
+      // Ignore invalid cache.
+    }
+  }, [])
+
+  const loadLaunches = useCallback(async () => {
+    const cutoff = Date.now() - LAUNCH_MATURITY_MS
+    if (!launchesInitialized.current) setLaunchesLoading(true)
+    const [dbResult, dexTokens] = await Promise.all([
+      supabase
+        .from('launched_tokens')
+        .select('mint,name,symbol,image_uri,description,creator,twitter,telegram,website,created_timestamp,sol_in_bonding_curve,liquidity,market_cap,usd_market_cap')
+        .lte('created_timestamp', cutoff)
+        .order('created_timestamp', { ascending: false })
+        .limit(200),
+      fetchDexHotTokens(40, 'solana').catch(() => []),
+    ])
+
+    if (dexTokens.length > 0) {
+      void supabase.from('launched_tokens').upsert(
+        dexTokens.map((token) => ({
+          mint: token.address,
+          name: token.name,
+          symbol: token.symbol,
+          image_uri: token.logoURI,
+          description: '',
+          creator: '',
+          twitter: '',
+          telegram: '',
+          website: '',
+          created_timestamp: token.createdAt,
+          sol_in_bonding_curve: 0,
+          liquidity: token.liquidity,
+          market_cap: token.marketCap,
+          usd_market_cap: token.marketCap,
+          source: 'dexscreener',
+          last_signature: '',
+          helius_metadata_fetched: false,
+          last_seen_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
+        { onConflict: 'mint' }
+      )
+    }
+
+    const byMint = new Map<string, FeedToken>()
+    ;(dbResult.data as LaunchRow[] | null)?.map(mapLaunchRow).forEach((token) => byMint.set(token.mint, token))
+    dexTokens.map(mapDexHotTokenToFeed).forEach((token) => {
+      const existing = byMint.get(token.mint)
+      byMint.set(token.mint, existing ? { ...token, ...existing, overview: existing.overview ?? token.overview } : token)
+    })
+    const nextLaunches = Array.from(byMint.values()).sort((a, b) => b.createdTimestamp - a.createdTimestamp)
+    setLaunches((prev) => {
+      const prevMints = new Set(prev.map((token) => token.mint))
+      return nextLaunches.map((token) => ({
+        ...token,
+        isNewest: launchesInitialized.current && !prevMints.has(token.mint),
+      }))
+    })
+    try {
+      localStorage.setItem(LAUNCHES_CACHE_KEY, JSON.stringify(nextLaunches.slice(0, 300)))
+    } catch {
+      // Ignore cache saturation.
+    }
+    launchesInitialized.current = true
+    setLaunchesLoading(false)
+  }, [])
 
   // Load launches from Supabase
   useEffect(() => {
     if (tab !== 'launches') return
-    const cutoff = Date.now() - LAUNCH_MATURITY_MS
-    setLaunchesLoading(true)
-    void supabase
-      .from('launched_tokens')
-      .select('mint,name,symbol,image_uri,description,creator,twitter,telegram,website,created_timestamp,sol_in_bonding_curve,liquidity,market_cap,usd_market_cap')
-      .lte('created_timestamp', cutoff)
-      .order('created_timestamp', { ascending: false })
-      .limit(200)
-      .then(({ data }) => {
-        if (data) {
-          setLaunches((data as LaunchRow[]).map(mapLaunchRow))
-        }
-        setLaunchesLoading(false)
-      })
-  }, [tab])
+    void loadLaunches()
+    const interval = setInterval(() => { void loadLaunches() }, 30_000)
+    return () => clearInterval(interval)
+  }, [tab, loadLaunches])
 
   // Hydrate launches (rug filter + overview + AI)
   useEffect(() => {
     if (tab !== 'launches') return
     const batch = launches
       .filter((t) => !launchHydQueue.current.has(t.mint) && (t.rugFilter == null || t.aiRating == null || t.overview == null))
-      .slice(0, 20)
+      .slice(0, 4)
 
     batch.forEach((token) => {
       launchHydQueue.current.add(token.mint)
@@ -159,7 +255,7 @@ export function FeedPage() {
           t.mint === token.mint ? { ...t, rugFilter, rugFilterLoading: false, overview: mergedOverview, sparklineData: sparklineData.length ? sparklineData : t.sparklineData, aiRatingLoading: !token.aiRating && rugFilter.risk !== 'unknown' } : t
         ))
         if (!token.aiRating && canRateWithAI({ ...token, rugFilter })) {
-          return getAITokenRating(token.name, token.symbol, token.description, rugFilter.score, rugFilter.flags)
+          return getAITokenRating(token.name, token.symbol, token.description, rugFilter.score, rugFilter.flags, aiContext({ ...token, rugFilter, overview: mergedOverview }))
             .then((aiRating) => {
               setLaunches((prev) => prev.map((t) =>
                 t.mint === token.mint ? { ...t, aiRating, aiRatingLoading: false } : t
@@ -178,16 +274,19 @@ export function FeedPage() {
   useEffect(() => {
     if (tab !== 'trending') return
     setTrendingLoading(true)
-    fetchTrendingTokens(30)
-      .then(setTrending)
+    Promise.all([
+      fetchDexHotTokens(30, 'solana').catch(() => []),
+      fetchTrendingTokens(15).catch(() => []),
+    ])
+      .then(([dex, birdeye]) => setTrending([...dex, ...birdeye]))
       .finally(() => setTrendingLoading(false))
   }, [tab])
 
   const handleTabChange = (t: FeedTab) => { setTab(t); setPage(1) }
   const handleFilterChange = (f: FilterMode) => { setFilterMode(f); setPage(1) }
+  const handleGraduatedChange = (g: GraduatedFilter) => { setGraduatedFilter(g); setPage(1) }
 
   const applyFilters = useCallback((items: FeedToken[]) => {
-    const q = search.trim().toLowerCase()
     const mcMin = mcFilter === '5k' ? 5000 : mcFilter === '25k' ? 25000 : mcFilter === '100k' ? 100000 : 0
     return items.filter((t) => {
       if (filterMode !== 'all') {
@@ -198,28 +297,39 @@ export function FeedPage() {
         const mc = t.overview?.marketCap ?? t.usdMarketCap ?? 0
         if (mc < mcMin) return false
       }
-      if (q) return t.name.toLowerCase().includes(q) || t.symbol.toLowerCase().includes(q) || t.mint.startsWith(q)
-      return true
+      return matchesSearchToken(t, search)
     })
   }, [filterMode, mcFilter, search])
 
   const cutoff = Date.now() - LAUNCH_MATURITY_MS
 
   const launchTokens = useMemo(() => {
-    const maturedLive = allTokens.filter((t) => t.createdTimestamp <= cutoff && isGraduatedToken(t))
+    const maturedLive = allTokens.filter((t) => t.createdTimestamp <= cutoff)
     const byMint = new Map<string, FeedToken>()
-    launches.filter(isGraduatedToken).forEach((t) => byMint.set(t.mint, t))
+    launches.forEach((t) => byMint.set(t.mint, t))
     maturedLive.forEach((t) => {
       const ex = byMint.get(t.mint)
-      byMint.set(t.mint, ex ? { ...ex, ...t, complete: isGraduatedToken(t) || ex.complete, overview: t.overview ?? ex.overview, rugFilter: t.rugFilter ?? ex.rugFilter, aiRating: t.aiRating ?? ex.aiRating, sparklineData: t.sparklineData.length ? t.sparklineData : ex.sparklineData } : { ...t, complete: isGraduatedToken(t) })
+      byMint.set(t.mint, ex
+        ? { ...ex, ...t, overview: t.overview ?? ex.overview, rugFilter: t.rugFilter ?? ex.rugFilter, aiRating: t.aiRating ?? ex.aiRating, sparklineData: t.sparklineData.length ? t.sparklineData : ex.sparklineData }
+        : t)
     })
-    return applyFilters(Array.from(byMint.values()).sort((a, b) => b.createdTimestamp - a.createdTimestamp))
-  }, [launches, allTokens, applyFilters, cutoff])
+    const all = Array.from(byMint.values()).sort((a, b) => b.createdTimestamp - a.createdTimestamp)
+    const graduated = graduatedFilter === 'graduated' ? all.filter(isGraduatedToken) : all
+    return applyFilters(graduated)
+  }, [launches, allTokens, applyFilters, cutoff, graduatedFilter])
 
   const newTokens = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return allTokens.filter((t) => !t.fromCache && t.createdTimestamp > cutoff && !isGraduatedToken(t) && (!q || t.name.toLowerCase().includes(q) || t.symbol.toLowerCase().includes(q)))
-  }, [allTokens, cutoff, search])
+    return applyFilters(allTokens.filter((t) => t.createdTimestamp > cutoff && !isGraduatedToken(t)))
+  }, [allTokens, cutoff, applyFilters])
+
+  const filteredTrending = useMemo(() => {
+    const mcMin = mcFilter === '5k' ? 5000 : mcFilter === '25k' ? 25000 : mcFilter === '100k' ? 100000 : 0
+    return trending.filter((token) => {
+      if (!matchesSearchTrending(token, search)) return false
+      if (mcMin > 0 && token.marketCap < mcMin) return false
+      return true
+    })
+  }, [trending, mcFilter, search])
 
   const activeTokens = tab === 'launches' ? launchTokens : tab === 'new' ? newTokens : []
   const paged = activeTokens.slice(0, PAGE_SIZE * page)
@@ -258,7 +368,7 @@ export function FeedPage() {
             >
               {label}
               {count !== null && (
-                <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-lg min-w-[22px] text-center text-white" style={{ backgroundColor: tab === key ? color : '#1f2937' }}>
+                <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-lg min-w-[22px] text-center text-white" style={{ backgroundColor: tab === key ? color : colors.border }}>
                   {count}
                 </span>
               )}
@@ -266,33 +376,39 @@ export function FeedPage() {
           ))}
         </div>
 
-        {/* Risk + MC filters (launches only) */}
-        {tab === 'launches' && (
-          <>
-            <div className="flex gap-2 overflow-x-auto pb-0.5 no-scrollbar">
-              {RISK_FILTERS.map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => handleFilterChange(key)}
-                  className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-[13px] font-semibold transition-colors ${filterMode === key ? 'bg-brand text-[#08110d]' : 'bg-dark-muted text-dark-subtext hover:text-dark-text'}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-2 overflow-x-auto pb-0.5 no-scrollbar">
-              {MC_FILTERS.map(({ key, label }) => (
-                <button
-                  key={key}
-                  onClick={() => { setMcFilter(key); setPage(1) }}
-                  className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-[13px] font-semibold transition-colors ${mcFilter === key ? 'bg-[#9945ff44] text-[#9945ff]' : 'bg-dark-muted text-dark-subtext hover:text-dark-text'}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </>
+        {/* Risk + graduation filters (launches/new only) */}
+        {tab !== 'trending' && (
+          <div className="flex gap-2 overflow-x-auto pb-0.5 no-scrollbar">
+            {RISK_FILTERS.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => handleFilterChange(key)}
+                className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-[13px] font-semibold transition-colors ${filterMode === key ? 'bg-brand text-[#08110d]' : 'bg-dark-muted text-dark-subtext hover:text-dark-text'}`}
+              >
+                {label}
+              </button>
+            ))}
+            {tab === 'launches' && (
+              <button
+                onClick={() => handleGraduatedChange(graduatedFilter === 'graduated' ? 'all' : 'graduated')}
+                className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-[13px] font-semibold transition-colors border ${graduatedFilter === 'graduated' ? 'bg-[#14f19520] border-[#14f19540] text-[#14f195]' : 'bg-dark-muted border-transparent text-dark-subtext hover:text-dark-text'}`}
+              >
+                ✓ Graduated
+              </button>
+            )}
+          </div>
         )}
+        <div className="flex gap-2 overflow-x-auto pb-0.5 no-scrollbar">
+          {MC_FILTERS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => { setMcFilter(key); setPage(1) }}
+              className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-[13px] font-semibold transition-colors ${mcFilter === key ? 'bg-[#9945ff44] text-[#9945ff]' : 'bg-dark-muted text-dark-subtext hover:text-dark-text'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
         {/* Search */}
         <div className="relative">
@@ -324,16 +440,18 @@ export function FeedPage() {
             </div>
           ) : (
             <div className="p-3 flex flex-col gap-2">
-              {trending.map((token, i) => {
+              {filteredTrending.map((token, i) => {
                 const isUp = token.priceChange24h >= 0
                 return (
                   <div
                     key={token.address}
-                    className="card p-3 flex items-center gap-3 cursor-pointer hover:bg-[#131c27] transition-colors"
+                    className="card p-3 flex items-center gap-3 cursor-pointer transition-colors"
                     onClick={() => navigate(`/token/${token.address}`)}
+                    onMouseEnter={(event) => { event.currentTarget.style.backgroundColor = colors.surface }}
+                    onMouseLeave={(event) => { event.currentTarget.style.backgroundColor = '' }}
                   >
                     <span className="text-dark-subtext font-bold text-sm w-6 text-center">#{i + 1}</span>
-                    <div className="w-10 h-10 rounded-full bg-[#1a1a2e] overflow-hidden flex-shrink-0">
+                    <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0" style={{ backgroundColor: colors.surface }}>
                       {token.logoURI && <img src={token.logoURI} alt={token.name} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -369,7 +487,7 @@ export function FeedPage() {
         ) : (
           <div className="p-3 flex flex-col gap-2">
             {paged.map((token) => (
-              <div key={token.mint} className={token.isNewest ? 'fade-in' : ''}>
+              <div key={token.mint} className={token.isNewest ? 'slide-in-right' : ''}>
                 <TokenCard
                   token={token}
                   onPress={() => navigate(`/token/${token.mint}`, { state: { token } })}
@@ -399,7 +517,25 @@ export function FeedPage() {
       <SnipeModal
         token={snipeToken}
         onClose={() => setSnipeToken(null)}
-        onConfirm={async () => { throw new Error('Connect a Solana wallet to snipe') }}
+        wallet={wallet}
+        onConfirm={async (mint, amountSol, slippage) => {
+          if (!user || isGuest || !wallet) {
+            openAuthModal()
+            throw new Error('Sign in to trade')
+          }
+          const token = snipeToken
+          if (!token || token.mint !== mint) throw new Error('Token context missing')
+          await buyTokenForUser({
+            wallet,
+            userId: user.id,
+            mint,
+            tokenName: token.name,
+            tokenSymbol: token.symbol,
+            tokenImageUri: token.imageUri,
+            amountSol,
+            slippageBps: slippage * 100,
+          })
+        }}
       />
     </div>
   )

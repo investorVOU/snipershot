@@ -12,6 +12,7 @@ import {
   type MoralisInterval,
   type MoralisSwap,
 } from '../services/moralis'
+import { useTheme } from '../context/ThemeContext'
 
 type ChartPlatform = 'dexscreener' | 'geckoterminal' | 'moralis'
 export type MemeChartStatus = 'bonding' | 'graduated' | 'unknown'
@@ -40,7 +41,7 @@ function resolvePlatform(chain: string, platform?: ChartPlatform, moralisApiKey?
   if (platform) return platform
   if (normalizeChain(chain) === 'solana') {
     if (!moralisApiKey) {
-      console.warn('Moralis API key missing for Solana chart. Falling back to DexScreener embed mode.')
+      // no Moralis key — fall back to DexScreener embed
       return 'dexscreener'
     }
     return 'moralis'
@@ -76,12 +77,12 @@ function geckoChainSlug(chain: string): string {
   return map[normalized] ?? normalized
 }
 
-function embedUrl(platform: ChartPlatform, chain: string, tokenAddress: string): string {
+function embedUrl(platform: ChartPlatform, chain: string, tokenAddress: string, theme: 'dark' | 'light'): string {
   const safeAddress = sanitizeAddress(tokenAddress)
   if (platform === 'geckoterminal') {
     return `https://www.geckoterminal.com/${geckoChainSlug(chain)}/pools/${safeAddress}?embed=1&info=0&swaps=0&light_chart=0`
   }
-  return `https://dexscreener.com/${dexScreenerChainSlug(chain)}/${safeAddress}?embed=1&theme=dark&trades=0&info=0`
+  return `https://dexscreener.com/${dexScreenerChainSlug(chain)}/${safeAddress}?embed=1&theme=${theme}&trades=0&info=0`
 }
 
 function chartUnavailable(tokenAddress: string, chain: string): boolean {
@@ -197,11 +198,13 @@ function EmbedChart({
   src,
   height,
   width,
+  onLoad,
 }: {
   title: string
   src: string
   height: number
   width: string
+  onLoad?: () => void
 }) {
   const [loaded, setLoaded] = useState(false)
 
@@ -215,7 +218,10 @@ function EmbedChart({
         allowFullScreen
         scrolling="no"
         sandbox="allow-scripts allow-same-origin allow-popups"
-        onLoad={() => setLoaded(true)}
+        onLoad={() => {
+          setLoaded(true)
+          onLoad?.()
+        }}
         className={`w-full h-full ${loaded ? 'block' : 'hidden'}`}
       />
     </div>
@@ -452,12 +458,19 @@ export function MemeChart({
   interval = '5min',
   onStatusChange,
 }: MemeChartProps) {
+  const { theme } = useTheme()
   const resolvedPlatform = resolvePlatform(chain, platform, moralisApiKey)
   const [activePlatform, setActivePlatform] = useState<ChartPlatform>(resolvedPlatform)
 
   useEffect(() => {
     setActivePlatform(resolvePlatform(chain, platform, moralisApiKey))
   }, [chain, moralisApiKey, platform])
+
+  useEffect(() => {
+    if (activePlatform !== 'moralis') {
+      onStatusChange?.('graduated')
+    }
+  }, [activePlatform, onStatusChange])
 
   if (chartUnavailable(tokenAddress, chain)) {
     return (
@@ -496,9 +509,10 @@ export function MemeChart({
   return (
     <EmbedChart
       title={`MemeChart - ${tokenAddress}`}
-      src={embedUrl(activePlatform, chain, tokenAddress)}
+      src={embedUrl(activePlatform, chain, tokenAddress, theme)}
       height={height}
       width={width}
+      onLoad={() => onStatusChange?.('graduated')}
     />
   )
 }

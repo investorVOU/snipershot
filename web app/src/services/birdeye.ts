@@ -6,10 +6,13 @@ const BIRDEYE_PROXY = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/birdeye
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY ?? ''
 const BIRDEYE_KEY = import.meta.env.VITE_BIRDEYE_KEY ?? ''
 const BIRDEYE_BASE = 'https://public-api.birdeye.so'
+// In Vite dev mode, /birdeye/* is proxied to BIRDEYE_BASE via vite.config.ts
+const IS_DEV = import.meta.env.DEV
 const BIRDEYE_TIMEOUT_MS = 12000
-const NEGATIVE_CACHE_TTL_MS = 60_000
+const NEGATIVE_CACHE_TTL_MS = 180_000
 
 const negativeCache = new Map<string, number>()
+const inflightCache = new Map<string, Promise<unknown | null>>()
 
 function cacheKey(path: string, params: Record<string, string>): string {
   const serialized = Object.entries(params)
@@ -44,11 +47,26 @@ async function tryProxy<T>(path: string, params: Record<string, string>): Promis
       'Content-Type': 'application/json',
       Authorization: `Bearer ${SUPABASE_ANON}`,
     },
-    body: JSON.stringify({ path, params }),
+    body: JSON.stringify({ path, params, apiKey: BIRDEYE_KEY }),
   })
 
   if (res.status === 400 || res.status === 404) return null
   if (!res.ok) throw new Error(`Birdeye proxy failed: ${res.status}`)
+  return (await res.json()) as T
+}
+
+async function tryDevProxy<T>(path: string, params: Record<string, string>): Promise<T | null> {
+  if (!IS_DEV || !BIRDEYE_KEY) return null
+
+  const url = new URL(`${window.location.origin}/birdeye${path}`)
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v))
+
+  const res = await fetchWithTimeout(url.toString(), {
+    headers: { 'X-API-KEY': BIRDEYE_KEY, 'x-chain': 'solana' },
+  })
+
+  if (res.status === 400 || res.status === 404) return null
+  if (!res.ok) throw new Error(`Birdeye dev-proxy failed: ${res.status}`)
   return (await res.json()) as T
 }
 
@@ -73,23 +91,36 @@ async function tryDirect<T>(path: string, params: Record<string, string>): Promi
 async function birdeyeGet<T>(path: string, params: Record<string, string>): Promise<T | null> {
   const key = cacheKey(path, params)
   if (shouldSkipRequest(key)) return null
+  const inflight = inflightCache.get(key)
+  if (inflight) return inflight as Promise<T | null>
 
-  try {
-    const proxied = await tryProxy<T>(path, params)
-    if (proxied) return proxied
-  } catch {
-    // Fall through to direct.
-  }
+  const request = (async () => {
+    // 1. Supabase edge function proxy (production)
+    try {
+      const proxied = await tryProxy<T>(path, params)
+      if (proxied) return proxied
+    } catch { /* fall through */ }
 
-  try {
-    const direct = await tryDirect<T>(path, params)
-    if (direct) return direct
-  } catch {
-    // Treat as unavailable and use fallback sources.
-  }
+    // 2. Vite dev proxy (localhost only)
+    try {
+      const dev = await tryDevProxy<T>(path, params)
+      if (dev) return dev
+    } catch { /* fall through */ }
 
-  markRequestFailed(key)
-  return null
+    // 3. Direct CORS attempt as last resort only outside dev
+    if (!IS_DEV) {
+      try {
+        const direct = await tryDirect<T>(path, params)
+        if (direct) return direct
+      } catch { /* treat as unavailable */ }
+    }
+
+    markRequestFailed(key)
+    return null
+  })()
+
+  inflightCache.set(key, request)
+  return request.finally(() => inflightCache.delete(key))
 }
 
 interface BirdeyeOverviewResp {
@@ -109,6 +140,12 @@ interface BirdeyeHolderResp {
   data?: {
     items?: Array<unknown>
     total?: number
+  }
+}
+
+interface RpcTokenAccountsResp {
+  result?: {
+    value?: Array<unknown>
   }
 }
 
@@ -170,9 +207,10 @@ export async function fetchTokenHoldersCount(mint: string): Promise<number | nul
     offset: '0',
     limit: '1',
   })
-  if (!data?.data) return null
-  if (typeof data.data.total === 'number') return data.data.total
-  if (Array.isArray(data.data.items)) return data.data.items.length
+  if (data?.data) {
+    if (typeof data.data.total === 'number') return data.data.total
+    if (Array.isArray(data.data.items)) return data.data.items.length
+  }
   return null
 }
 

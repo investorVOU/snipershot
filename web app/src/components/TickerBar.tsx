@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { FeedToken } from '../types'
+import { useTheme } from '../context/ThemeContext'
 
 interface Props {
   tokens: FeedToken[]
@@ -8,6 +9,7 @@ interface Props {
 const ITEM_WIDTH = 130
 
 export function TickerBar({ tokens }: Props) {
+  const { colors } = useTheme()
   const items = tokens.slice(0, 12)
   const doubled = [...items, ...items]
   const containerRef = useRef<HTMLDivElement>(null)
@@ -58,7 +60,7 @@ export function TickerBar({ tokens }: Props) {
                 className="flex items-center gap-1.5 px-2 border-r border-dark-border h-[46px] flex-shrink-0"
                 style={{ width: ITEM_WIDTH }}
               >
-                <div className="w-6 h-6 rounded-full bg-[#1a1a2e] flex-shrink-0 overflow-hidden">
+                <div className="w-6 h-6 rounded-full flex-shrink-0 overflow-hidden" style={{ backgroundColor: colors.surface }}>
                   {imgSrc && (
                     <img src={imgSrc} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
                   )}

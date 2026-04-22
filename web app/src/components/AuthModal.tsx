@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { X, Mail, Globe, Eye, Loader2, Crosshair } from 'lucide-react'
+import { X, Mail, Globe, Eye, Loader2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
 import { supabase } from '../services/supabase'
 
 type Mode = 'login' | 'signup'
@@ -12,6 +13,7 @@ interface AuthModalProps {
 
 export function AuthModal({ visible, onClose }: AuthModalProps) {
   const { signInWithEmail, signUpWithEmail, signInWithGoogle, signInWithTwitter, continueAsGuest } = useAuth()
+  const { colors } = useTheme()
 
   const [mode, setMode] = useState<Mode>('login')
   const [email, setEmail] = useState('')
@@ -86,7 +88,7 @@ export function AuthModal({ visible, onClose }: AuthModalProps) {
       style={{ background: 'rgba(8,12,18,0.85)', backdropFilter: 'blur(6px)' }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="w-full max-w-sm bg-[#0d1520] border border-[#202b38] rounded-2xl shadow-2xl flex flex-col gap-5 p-6 relative">
+      <div className="w-full max-w-sm rounded-2xl shadow-2xl flex flex-col gap-5 p-6 relative" style={{ backgroundColor: colors.surface, border: `1px solid ${colors.border}` }}>
         {/* Close */}
         <button
           onClick={onClose}
@@ -97,15 +99,15 @@ export function AuthModal({ visible, onClose }: AuthModalProps) {
 
         {/* Hero */}
         <div className="flex flex-col items-center gap-2 pt-1">
-          <div className="w-16 h-16 rounded-2xl bg-[#121925] border border-[#2d3745] flex items-center justify-center">
-            <Crosshair size={30} className="text-brand" />
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}>
+            <span className="text-brand font-black text-3xl tracking-tight">S</span>
           </div>
-          <h2 className="text-dark-text font-extrabold text-xl tracking-tight">SniperShot</h2>
+          <h2 className="text-dark-text font-extrabold text-xl tracking-tight">Solmint</h2>
           <p className="text-dark-subtext text-xs text-center">Snipe Solana memecoins the moment they launch</p>
         </div>
 
         {/* Mode toggle */}
-        <div className="flex bg-[#121925] rounded-xl p-1 gap-1">
+        <div className="flex rounded-xl p-1 gap-1" style={{ backgroundColor: colors.card }}>
           {(['login', 'signup'] as Mode[]).map((m) => (
             <button
               key={m}
@@ -168,9 +170,9 @@ export function AuthModal({ visible, onClose }: AuthModalProps) {
 
         {/* Divider */}
         <div className="flex items-center gap-3">
-          <div className="flex-1 h-px bg-[#202b38]" />
-          <span className="text-[#475261] text-[11px]">or continue with</span>
-          <div className="flex-1 h-px bg-[#202b38]" />
+          <div className="flex-1 h-px" style={{ backgroundColor: colors.border }} />
+          <span className="text-[11px]" style={{ color: colors.textMuted }}>or continue with</span>
+          <div className="flex-1 h-px" style={{ backgroundColor: colors.border }} />
         </div>
 
         {/* Social */}
@@ -178,14 +180,16 @@ export function AuthModal({ visible, onClose }: AuthModalProps) {
           <button
             onClick={handleGoogle}
             disabled={busy}
-            className="flex-1 flex items-center justify-center gap-1.5 bg-[#121925] border border-[#202b38] rounded-xl py-3 text-dark-text text-sm font-semibold hover:bg-[#1a2535] transition-colors disabled:opacity-50"
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl py-3 text-dark-text text-sm font-semibold transition-colors disabled:opacity-50"
+            style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}
           >
             <Globe size={14} /> Google
           </button>
           <button
             onClick={handleTwitter}
             disabled={busy}
-            className="flex-1 flex items-center justify-center gap-1.5 bg-[#121925] border border-[#202b38] rounded-xl py-3 text-dark-text text-sm font-semibold hover:bg-[#1a2535] transition-colors disabled:opacity-50"
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl py-3 text-dark-text text-sm font-semibold transition-colors disabled:opacity-50"
+            style={{ backgroundColor: colors.card, border: `1px solid ${colors.border}` }}
           >
             <span className="font-extrabold text-sm leading-none">𝕏</span> Twitter
           </button>
@@ -199,7 +203,7 @@ export function AuthModal({ visible, onClose }: AuthModalProps) {
           <Eye size={14} /> Browse as Guest
         </button>
 
-        <p className="text-[#3c4653] text-[10px] text-center">
+        <p className="text-[10px] text-center" style={{ color: colors.textMuted }}>
           By continuing you accept our Terms of Service. 0.5% platform fee on swaps.
         </p>
       </div>

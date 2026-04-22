@@ -6,18 +6,18 @@ export default {
     extend: {
       colors: {
         brand: {
-          DEFAULT: '#27c985',
-          dark: '#1fa86e',
-          muted: '#27c98520',
+          DEFAULT: 'rgb(var(--color-brand) / <alpha-value>)',
+          dark: 'rgb(var(--color-brand-dark) / <alpha-value>)',
+          muted: 'rgb(var(--color-brand) / 0.12)',
         },
         dark: {
-          bg: '#0a0f16',
-          card: '#111827',
-          border: '#1f2937',
-          muted: '#1e2a38',
-          text: '#f3f6f8',
-          subtext: '#7e8a99',
-          faint: '#475261',
+          bg: 'rgb(var(--color-bg) / <alpha-value>)',
+          card: 'rgb(var(--color-card) / <alpha-value>)',
+          border: 'rgb(var(--color-border) / <alpha-value>)',
+          muted: 'rgb(var(--color-muted) / <alpha-value>)',
+          text: 'rgb(var(--color-text) / <alpha-value>)',
+          subtext: 'rgb(var(--color-subtext) / <alpha-value>)',
+          faint: 'rgb(var(--color-faint) / <alpha-value>)',
         },
       },
       fontFamily: {

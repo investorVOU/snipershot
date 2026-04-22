@@ -1,5 +1,6 @@
 import nacl from 'tweetnacl'
 import bs58 from 'bs58'
+import { Keypair } from '@solana/web3.js'
 
 const WALLET_STORAGE_PREFIX = 'snipershot_wallet_'
 
@@ -49,4 +50,8 @@ export function exportPrivateKeyBase58(wallet: EmbeddedWallet): string {
 // Returns the raw secret key bytes for transaction signing
 export function getSecretKeyBytes(wallet: EmbeddedWallet): Uint8Array {
   return new Uint8Array(wallet.secretKey)
+}
+
+export function getKeypair(wallet: EmbeddedWallet): Keypair {
+  return Keypair.fromSecretKey(getSecretKeyBytes(wallet))
 }

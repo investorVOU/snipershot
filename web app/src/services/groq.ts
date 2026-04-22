@@ -58,13 +58,15 @@ export async function getAITokenRating(
   symbol: string,
   description: string,
   rugScore: number,
-  flags: string[]
+  flags: string[],
+  extraContext?: string
 ): Promise<AITokenRating> {
   const prompt = `Analyze this Solana memecoin and provide a JSON verdict.
 Token: ${name} ($${symbol})
 Description: ${description || 'None provided'}
 Rug score: ${rugScore}/100
 Risk flags: ${flags.length ? flags.join(', ') : 'None'}
+Additional context: ${extraContext || 'None'}
 
 Respond ONLY with valid JSON in this exact format:
 {"verdict":"bullish"|"neutral"|"bearish"|"scam","score":0-100,"reason":"1-2 sentence reason","tags":["tag1","tag2"]}`

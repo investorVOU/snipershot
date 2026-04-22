@@ -7,6 +7,7 @@ import { AIVerdictBadge } from './AIVerdictBadge'
 import { AIVerdictModal } from './AIVerdictModal'
 import { NarrativeTags } from './NarrativeTags'
 import { formatAge, formatMarketCap, toHttpUrl } from '../services/format'
+import { useTheme } from '../context/ThemeContext'
 
 interface TokenVotes {
   upvotes: number
@@ -23,6 +24,7 @@ interface Props {
 }
 
 export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched }: Props) {
+  const { colors } = useTheme()
   const [verdictModal, setVerdictModal] = useState<AITokenRating | null>(null)
   const [votes, setVotes] = useState<TokenVotes>({ upvotes: 0, downvotes: 0, userVote: null })
 
@@ -52,12 +54,14 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched }: Props
   return (
     <>
       <div
-        className="bg-dark-card rounded-[14px] p-[14px] flex flex-col gap-[10px] cursor-pointer hover:bg-[#131c27] transition-colors active:scale-[0.99]"
+        className="bg-dark-card rounded-[14px] p-[14px] flex flex-col gap-[10px] cursor-pointer transition-colors active:scale-[0.99]"
         onClick={onPress}
+        onMouseEnter={(event) => { event.currentTarget.style.backgroundColor = colors.surface }}
+        onMouseLeave={(event) => { event.currentTarget.style.backgroundColor = '' }}
       >
         {/* Top row: avatar · name/stats · sparkline */}
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-[#1a1a2e] flex-shrink-0 overflow-hidden">
+          <div className="w-12 h-12 rounded-full flex-shrink-0 overflow-hidden" style={{ backgroundColor: colors.surface }}>
             {imgSrc && (
               <img src={imgSrc} alt={token.name} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
             )}
@@ -131,9 +135,9 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched }: Props
             <button
               className="flex items-center gap-1 rounded-lg border px-2 py-[7px] text-[12px] font-bold transition-colors"
               style={{
-                backgroundColor: votes.userVote === 'up' ? '#14f19522' : '#1e2a38',
-                borderColor: votes.userVote === 'up' ? '#14f19555' : '#1f2937',
-                color: votes.userVote === 'up' ? '#14f195' : '#7e8a99',
+                backgroundColor: votes.userVote === 'up' ? '#14f19522' : colors.surface,
+                borderColor: votes.userVote === 'up' ? '#14f19555' : colors.border,
+                color: votes.userVote === 'up' ? '#14f195' : colors.textMuted,
               }}
               onClick={() => vote('up')}
             >
@@ -143,9 +147,9 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched }: Props
             <button
               className="flex items-center gap-1 rounded-lg border px-2 py-[7px] text-[12px] font-bold transition-colors"
               style={{
-                backgroundColor: votes.userVote === 'down' ? '#ef444422' : '#1e2a38',
-                borderColor: votes.userVote === 'down' ? '#ef444455' : '#1f2937',
-                color: votes.userVote === 'down' ? '#ef4444' : '#7e8a99',
+                backgroundColor: votes.userVote === 'down' ? '#ef444422' : colors.surface,
+                borderColor: votes.userVote === 'down' ? '#ef444455' : colors.border,
+                color: votes.userVote === 'down' ? '#ef4444' : colors.textMuted,
               }}
               onClick={() => vote('down')}
             >
@@ -159,12 +163,12 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched }: Props
               <button
                 className="w-8 h-8 rounded-lg border flex items-center justify-center transition-colors"
                 style={{
-                  backgroundColor: isWatched ? '#9945ff22' : '#1e2a38',
-                  borderColor: isWatched ? '#9945ff55' : '#1f2937',
+                  backgroundColor: isWatched ? '#9945ff22' : colors.surface,
+                  borderColor: isWatched ? '#9945ff55' : colors.border,
                 }}
                 onClick={onWatch}
               >
-                <Star size={13} color={isWatched ? '#9945ff' : '#7e8a99'} fill={isWatched ? '#9945ff' : 'none'} />
+                <Star size={13} color={isWatched ? '#9945ff' : colors.textMuted} fill={isWatched ? '#9945ff' : 'none'} />
               </button>
             )}
 

@@ -4,10 +4,12 @@ import { subscribePumpPortal } from '../services/pumpfun'
 import { runRugFilter } from '../services/rugFilter'
 import { fetchTokenOverview, fetchOHLCV, fetchTokenHoldersCount } from '../services/birdeye'
 import { getAITokenRating } from '../services/groq'
+import { fetchAllPlatformNewTokens } from '../services/launchpads'
 
 const MAX_FEED_SIZE = 500
 const FEED_CACHE_KEY = 'snapshot_feed_cache'
-const LIVE_REFRESH_INTERVAL = 30_000
+const LIVE_REFRESH_INTERVAL = 90_000
+const PLATFORM_POLL_INTERVAL = 300_000
 
 function tokenFromPump(pump: PumpfunToken, isNewest = true): FeedToken {
   return {
@@ -29,6 +31,17 @@ function canRateWithAI(token: FeedToken): boolean {
   return token.rugFilter !== null && token.rugFilter.risk !== 'unknown'
 }
 
+function aiContext(token: FeedToken): string {
+  return [
+    `price=${token.overview?.price ?? 0}`,
+    `marketCap=${token.overview?.marketCap ?? token.usdMarketCap ?? 0}`,
+    `liquidity=${token.overview?.liquidity ?? 0}`,
+    `volume24h=${token.overview?.volume24h ?? 0}`,
+    `holders=${token.overview?.holders ?? 0}`,
+    `ageMs=${Math.max(0, Date.now() - token.createdTimestamp)}`,
+  ].join(', ')
+}
+
 export function useTokenFeed(filterMode: FilterMode = 'all') {
   const [tokens, setTokens] = useState<FeedToken[]>([])
   const [cacheLoaded, setCacheLoaded] = useState(false)
@@ -40,6 +53,7 @@ export function useTokenFeed(filterMode: FilterMode = 'all') {
   const aiRatingQueue = useRef<Set<string>>(new Set())
   const seenMints = useRef<Set<string>>(new Set())
   const refreshTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const platformPollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Load cache on mount
   useEffect(() => {
@@ -49,7 +63,14 @@ export function useTokenFeed(filterMode: FilterMode = 'all') {
         const cached = JSON.parse(raw) as FeedToken[]
         const valid = cached.filter((t) => t.mint && t.name)
         valid.forEach((t) => seenMints.current.add(t.mint))
-        setTokens(valid.map((t) => ({ ...t, fromCache: true, rugFilterLoading: !t.rugFilter })))
+        setTokens(valid.map((t) => ({
+          ...t,
+          fromCache: true,
+          rugFilter: t.rugFilter?.risk === 'unknown' ? null : t.rugFilter,
+          rugFilterLoading: !t.rugFilter || t.rugFilter.risk === 'unknown',
+          aiRating: t.rugFilter?.risk === 'unknown' ? null : t.aiRating,
+          aiRatingLoading: false,
+        })))
       }
     } catch { /* ignore */ }
     setCacheLoaded(true)
@@ -79,11 +100,33 @@ export function useTokenFeed(filterMode: FilterMode = 'all') {
     return unsub
   }, [cacheLoaded])
 
+  // Poll bags.fm + bonk.fun for new tokens
+  useEffect(() => {
+    if (!cacheLoaded) return
+
+    const ingest = () => {
+      fetchAllPlatformNewTokens().then((tokens) => {
+        const fresh = tokens.filter((t) => !seenMints.current.has(t.mint))
+        if (fresh.length === 0) return
+        fresh.forEach((t) => seenMints.current.add(t.mint))
+        setTokens((prev) => {
+          const newFeedTokens = fresh.map((t) => tokenFromPump(t, true))
+          const next = [...newFeedTokens, ...prev.map((t) => ({ ...t, isNewest: false }))]
+          return next.slice(0, MAX_FEED_SIZE)
+        })
+      }).catch(() => { /* platform APIs unavailable */ })
+    }
+
+    ingest()
+    platformPollTimer.current = setInterval(ingest, PLATFORM_POLL_INTERVAL)
+    return () => { if (platformPollTimer.current) clearInterval(platformPollTimer.current) }
+  }, [cacheLoaded])
+
   // Rug filter hydration
   useEffect(() => {
     const pending = tokens.filter(
       (t) => t.rugFilterLoading && t.rugFilter === null && !rugFilterQueue.current.has(t.mint)
-    ).slice(0, 12)
+    ).slice(0, 3)
 
     if (pending.length === 0) return
 
@@ -110,13 +153,14 @@ export function useTokenFeed(filterMode: FilterMode = 'all') {
   useEffect(() => {
     const pending = tokens.filter(
       (t) => !t.rugFilterLoading && !t.overview && !overviewFetchQueue.current.has(t.mint)
-    ).slice(0, 12)
+    ).slice(0, 3)
 
     if (pending.length === 0) return
 
     pending.forEach((token) => {
       overviewFetchQueue.current.add(token.mint)
-      Promise.all([fetchTokenOverview(token.mint), fetchOHLCV(token.mint, '1m', 30), fetchTokenHoldersCount(token.mint)])
+      const isGraduated = token.complete || !token.mint.endsWith('pump')
+      Promise.all([fetchTokenOverview(token.mint), isGraduated ? fetchOHLCV(token.mint, '1m', 30) : Promise.resolve([]), fetchTokenHoldersCount(token.mint)])
         .then(([overview, ohlcv, holdersCount]) => {
           const sparklineData = ohlcv.map((b) => b.close)
           const mergedOverview = overview
@@ -147,7 +191,7 @@ export function useTokenFeed(filterMode: FilterMode = 'all') {
         !t.aiRatingLoading &&
         !aiRatingQueue.current.has(t.mint) &&
         canRateWithAI(t)
-    ).slice(0, 3)
+    ).slice(0, 2)
 
     if (pending.length === 0) return
 
@@ -156,7 +200,7 @@ export function useTokenFeed(filterMode: FilterMode = 'all') {
       aiRatingQueue.current.add(token.mint)
       setTokens((prev) => prev.map((t) => t.mint === token.mint ? { ...t, aiRatingLoading: true } : t))
 
-      getAITokenRating(token.name, token.symbol, token.description, token.rugFilter!.score, token.rugFilter!.flags)
+      getAITokenRating(token.name, token.symbol, token.description, token.rugFilter!.score, token.rugFilter!.flags, aiContext(token))
         .then((rating) => {
           setTokens((prev) => prev.map((t) => t.mint === token.mint ? { ...t, aiRating: rating, aiRatingLoading: false } : t))
         })
@@ -184,11 +228,12 @@ export function useTokenFeed(filterMode: FilterMode = 'all') {
   // Live refresh of overview data
   useEffect(() => {
     refreshTimer.current = setInterval(() => {
-      const toRefresh = tokens.slice(0, 20)
+      const toRefresh = tokens.slice(0, 6)
       toRefresh.forEach((token) => {
         if (overviewFetchQueue.current.has(token.mint)) return
         overviewFetchQueue.current.add(token.mint)
-        Promise.all([fetchTokenOverview(token.mint), fetchOHLCV(token.mint, '1m', 30), fetchTokenHoldersCount(token.mint)])
+        const isGraduated = token.complete || !token.mint.endsWith('pump')
+        Promise.all([fetchTokenOverview(token.mint), isGraduated ? fetchOHLCV(token.mint, '1m', 30) : Promise.resolve([]), fetchTokenHoldersCount(token.mint)])
           .then(([overview, ohlcv, holdersCount]) => {
             const sparklineData = ohlcv.map((b) => b.close)
             const mergedOverview = overview
@@ -230,7 +275,7 @@ export function useTokenFeed(filterMode: FilterMode = 'all') {
     setTokens((prev) => prev.map((t) => t.mint === mint ? { ...t, aiRatingLoading: true } : t))
 
     try {
-      const rating = await getAITokenRating(token.name, token.symbol, token.description, token.rugFilter!.score, token.rugFilter!.flags)
+      const rating = await getAITokenRating(token.name, token.symbol, token.description, token.rugFilter!.score, token.rugFilter!.flags, aiContext(token))
       setTokens((prev) => prev.map((t) => t.mint === mint ? { ...t, aiRating: rating, aiRatingLoading: false } : t))
     } catch {
       setTokens((prev) => prev.map((t) => t.mint === mint ? { ...t, aiRatingLoading: false } : t))

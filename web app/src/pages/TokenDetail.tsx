@@ -14,6 +14,10 @@ import { SnipeModal } from '../components/SnipeModal'
 import { MemeChart, type MemeChartStatus } from '../components/MemeChart'
 import { useWatchlist } from '../hooks/useWatchlist'
 import { toHttpUrl, formatMarketCap, formatPrice, formatPercent, formatAge, shortenAddress } from '../services/format'
+import { useAuth } from '../context/AuthContext'
+import { buyTokenForUser, sellTokenForUser } from '../services/solana'
+import { supabase } from '../services/supabase'
+import { useTheme } from '../context/ThemeContext'
 
 function mergeOverview(overview: TokenOverview | null, holdersCount: number | null): TokenOverview | null {
   if (!overview) return null
@@ -27,11 +31,24 @@ function canRateWithAI(token: FeedToken | null): token is FeedToken {
   return !!token && !!token.rugFilter && token.rugFilter.risk !== 'unknown'
 }
 
+function aiContext(token: FeedToken): string {
+  return [
+    `price=${token.overview?.price ?? 0}`,
+    `marketCap=${token.overview?.marketCap ?? token.usdMarketCap ?? 0}`,
+    `liquidity=${token.overview?.liquidity ?? 0}`,
+    `volume24h=${token.overview?.volume24h ?? 0}`,
+    `holders=${token.overview?.holders ?? 0}`,
+    `ageMs=${Math.max(0, Date.now() - token.createdTimestamp)}`,
+  ].join(', ')
+}
+
 export function TokenDetailPage() {
   const { mint } = useParams<{ mint: string }>()
   const location = useLocation()
   const navigate = useNavigate()
   const { toggleWatchlist, isWatched } = useWatchlist()
+  const { user, wallet, isGuest, openAuthModal } = useAuth()
+  const { colors, isDark } = useTheme()
 
   const passedToken = location.state?.token as FeedToken | undefined
   const [token, setToken] = useState<FeedToken | null>(passedToken ?? null)
@@ -43,6 +60,8 @@ export function TokenDetailPage() {
   const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([])
   const [loading, setLoading] = useState(!passedToken)
   const [chartStatus, setChartStatus] = useState<MemeChartStatus>('unknown')
+  const [positionAmount, setPositionAmount] = useState(0)
+  const [selling, setSelling] = useState(false)
 
   const tokenContext = useMemo(() => {
     if (!token) return ''
@@ -131,7 +150,7 @@ export function TokenDetailPage() {
       } : prev)
     })
 
-    if (!passedToken.rugFilter) {
+    if (!passedToken.rugFilter || passedToken.rugFilter.risk === 'unknown') {
       runRugFilter(mint).then((rugFilter) => {
         setToken((prev) => prev ? { ...prev, rugFilter, rugFilterLoading: false } : prev)
       })
@@ -143,7 +162,7 @@ export function TokenDetailPage() {
 
     const rugFilter = token.rugFilter!
     setToken((prev) => prev ? { ...prev, aiRatingLoading: true } : prev)
-    getAITokenRating(token.name, token.symbol, token.description, rugFilter.score, rugFilter.flags)
+    getAITokenRating(token.name, token.symbol, token.description, rugFilter.score, rugFilter.flags, aiContext(token))
       .then((rating) => {
         setToken((prev) => prev ? { ...prev, aiRating: rating, aiRatingLoading: false } : prev)
       })
@@ -151,6 +170,42 @@ export function TokenDetailPage() {
         setToken((prev) => prev ? { ...prev, aiRatingLoading: false } : prev)
       })
   }, [token])
+
+  useEffect(() => {
+    if (!user || !mint) {
+      setPositionAmount(0)
+      return
+    }
+
+    void (async () => {
+      try {
+        const { data } = await supabase
+          .from('positions')
+          .select('*')
+          .eq('user_pubkey', user.id)
+          .eq('mint', mint)
+
+        const openRows = ((data as Record<string, unknown>[] | null) ?? []).filter((row) => row.closed !== true)
+        if (openRows.length > 0) {
+          const total = openRows.reduce((sum, row) => sum + Number((row.amount_tokens as number) ?? 0), 0)
+          setPositionAmount(total)
+          return
+        }
+
+        const { data: fallbackRows } = await supabase
+          .from('positions')
+          .select('*')
+          .eq('user_pubkey', user.id)
+          .eq('mint', mint)
+          .eq('closed', false)
+
+        const total = ((fallbackRows as Record<string, unknown>[] | null) ?? []).reduce((sum, row) => sum + Number((row.amount_tokens as number) ?? 0), 0)
+        setPositionAmount(total)
+      } catch {
+        setPositionAmount(0)
+      }
+    })()
+  }, [mint, user])
 
   if (loading) {
     return (
@@ -207,7 +262,7 @@ export function TokenDetailPage() {
         <button onClick={() => navigate(-1)} className="text-dark-subtext hover:text-dark-text transition-colors">
           <ArrowLeft size={20} />
         </button>
-        <div className="w-8 h-8 rounded-full bg-[#1a1a2e] overflow-hidden flex-shrink-0">
+        <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0" style={{ backgroundColor: colors.surface }}>
           {toHttpUrl(token.imageUri) && (
             <img src={toHttpUrl(token.imageUri)} alt={token.name} className="w-full h-full object-cover" />
           )}
@@ -220,16 +275,24 @@ export function TokenDetailPage() {
           onClick={() => toggleWatchlist(token.mint)}
           className="w-9 h-9 rounded-lg border flex items-center justify-center transition-colors"
           style={{
-            backgroundColor: isWatched(token.mint) ? '#9945ff22' : '#1e2a38',
-            borderColor: isWatched(token.mint) ? '#9945ff55' : '#1f2937',
+            backgroundColor: isWatched(token.mint) ? '#9945ff22' : colors.surface,
+            borderColor: isWatched(token.mint) ? '#9945ff55' : colors.border,
           }}
         >
-          <Star size={15} color={isWatched(token.mint) ? '#9945ff' : '#7e8a99'} fill={isWatched(token.mint) ? '#9945ff' : 'none'} />
+          <Star size={15} color={isWatched(token.mint) ? '#9945ff' : colors.textMuted} fill={isWatched(token.mint) ? '#9945ff' : 'none'} />
         </button>
         <button onClick={() => setSnipeOpen(true)} className="btn-primary py-2 text-sm">
           <Crosshair size={14} /> Snipe
         </button>
-        <button onClick={() => setChatOpen(true)} className="px-3 py-2 rounded-lg bg-[#9945ff22] border border-[#9945ff44] text-[#9945ff] text-sm font-semibold hover:bg-[#9945ff33] transition-colors">
+        <button
+          onClick={() => setChatOpen(true)}
+          className="px-3 py-2 rounded-lg border text-sm font-semibold transition-colors"
+          style={{
+            backgroundColor: isDark ? '#9945ff22' : '#9945ff12',
+            borderColor: isDark ? '#9945ff44' : '#9945ff2b',
+            color: colors.accent,
+          }}
+        >
           <Bot size={14} className="inline mr-1.5" /> Ask AI
         </button>
       </div>
@@ -320,7 +383,7 @@ export function TokenDetailPage() {
           <div className="card p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-dark-text font-semibold">AI Analysis</h3>
-              <button onClick={() => setVerdictModal(token.aiRating)} className="text-[#9945ff] text-sm font-semibold hover:opacity-80 transition-opacity">
+              <button onClick={() => setVerdictModal(token.aiRating)} className="text-sm font-semibold hover:opacity-80 transition-opacity" style={{ color: colors.accent }}>
                 View details
               </button>
             </div>
@@ -337,7 +400,15 @@ export function TokenDetailPage() {
             {token.aiRating.tags.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {token.aiRating.tags.map((tag) => (
-                  <span key={tag} className="px-2 py-1 rounded-lg bg-[#9945ff14] border border-[#9945ff33] text-[#9945ff] text-xs font-semibold">
+                  <span
+                    key={tag}
+                    className="px-2 py-1 rounded-lg border text-xs font-semibold"
+                    style={{
+                      backgroundColor: isDark ? '#9945ff14' : '#9945ff10',
+                      borderColor: isDark ? '#9945ff33' : '#9945ff24',
+                      color: colors.accent,
+                    }}
+                  >
                     {tag}
                   </span>
                 ))}
@@ -382,14 +453,46 @@ export function TokenDetailPage() {
       </div>
 
       <AIVerdictModal visible={verdictModal !== null} onClose={() => setVerdictModal(null)} verdict={verdictModal} tokenName={token.name} />
-      <SnipeModal token={snipeOpen ? token : null} onClose={() => setSnipeOpen(false)} onConfirm={async () => { throw new Error('Connect a Solana wallet to snipe') }} />
+      <SnipeModal
+        token={snipeOpen ? token : null}
+        wallet={wallet}
+        positionTokens={positionAmount}
+        onClose={() => setSnipeOpen(false)}
+        onConfirm={async (mint, amountSol, slippage) => {
+          if (!user || isGuest || !wallet) { openAuthModal(); throw new Error('Sign in to trade') }
+          await buyTokenForUser({
+            wallet,
+            userId: user.id,
+            mint,
+            tokenName: token.name,
+            tokenSymbol: token.symbol,
+            tokenImageUri: token.imageUri,
+            amountSol,
+            slippageBps: slippage * 100,
+          })
+        }}
+        onSell={async (mint, amountTokens, slippage) => {
+          if (!user || !wallet) { openAuthModal(); throw new Error('Sign in to sell') }
+          await sellTokenForUser({
+            wallet,
+            userId: user.id,
+            mint,
+            tokenName: token.name,
+            tokenSymbol: token.symbol,
+            tokenImageUri: token.imageUri,
+            amountTokens,
+            slippageBps: slippage * 100,
+          })
+          setPositionAmount(0)
+        }}
+      />
 
       {chatOpen && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setChatOpen(false)}>
           <div className="w-full max-w-xl bg-dark-card rounded-2xl border border-dark-border p-4 flex flex-col gap-4 max-h-[80vh]" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Bot size={18} className="text-[#9945ff]" />
+                <Bot size={18} style={{ color: colors.accent }} />
                 <h3 className="text-dark-text font-semibold">Ask AI about {token.symbol}</h3>
               </div>
               <button onClick={() => setChatOpen(false)} className="text-dark-subtext hover:text-dark-text transition-colors">
@@ -436,10 +539,11 @@ export function TokenDetailPage() {
 }
 
 function StatBox({ label, value, color }: { label: string; value: string; color?: string }) {
+  const { colors } = useTheme()
   return (
     <div className="bg-dark-muted rounded-lg px-3 py-2">
       <div className="text-dark-subtext text-[10px] font-semibold mb-1">{label}</div>
-      <div className="font-bold text-sm" style={{ color: color ?? '#f3f6f8' }}>
+      <div className="font-bold text-sm" style={{ color: color ?? colors.text }}>
         {value}
       </div>
     </div>

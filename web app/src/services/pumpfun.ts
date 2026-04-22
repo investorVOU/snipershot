@@ -162,10 +162,62 @@ export interface DexScreenerSnapshot {
   }
 }
 
+const DEXSCREENER_BASE = 'https://api.dexscreener.com'
+const IS_DEV = import.meta.env.DEV
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? ''
+const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY ?? ''
+const DEX_NEGATIVE_CACHE_TTL_MS = 120_000
+const dexFailureCache = new Map<string, number>()
+
+function shouldSkipDex(path: string): boolean {
+  const expiresAt = dexFailureCache.get(path)
+  if (!expiresAt) return false
+  if (expiresAt > Date.now()) return true
+  dexFailureCache.delete(path)
+  return false
+}
+
+function markDexFailed(path: string) {
+  dexFailureCache.set(path, Date.now() + DEX_NEGATIVE_CACHE_TTL_MS)
+}
+
+async function dexscreenerFetch(path: string): Promise<Response | null> {
+  if (shouldSkipDex(path)) return null
+
+  // 1. Vite dev proxy (localhost only)
+  if (IS_DEV) {
+    try {
+      const res = await fetch(`/dexscreener${path}`)
+      if (res.ok) return res
+      if (res.status === 404 || res.status === 429) {
+        markDexFailed(path)
+        return null
+      }
+    } catch { /* fall through */ }
+  }
+
+  // 2. Supabase edge function proxy (production)
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/dexscreener-proxy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SUPABASE_ANON}` },
+      body: JSON.stringify({ path }),
+    })
+    if (res.ok) return res
+    if (res.status === 404 || res.status === 429) {
+      markDexFailed(path)
+      return null
+    }
+  } catch { /* fall through */ }
+
+  markDexFailed(path)
+  return null
+}
+
 export async function fetchDexScreenerSnapshot(mint: string): Promise<DexScreenerSnapshot | null> {
   try {
-    const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${mint}`)
-    if (!res.ok) return null
+    const res = await dexscreenerFetch(`/latest/dex/tokens/${mint}`)
+    if (!res) return null
 
     const data = (await res.json()) as DexScreenerResp
     const pair = data.pairs?.find((item) => item.baseToken?.symbol) ?? data.pairs?.[0]

@@ -2,14 +2,52 @@ import { useState, useEffect, useCallback } from 'react'
 import { Wallet, Copy, Check, ExternalLink, QrCode, Send, RefreshCw, ArrowUpRight, ArrowDownLeft, X, Key, Eye, EyeOff, AlertTriangle, LogIn } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { exportPrivateKeyBase58 } from '../services/walletService'
-import { shortenAddress } from '../services/format'
+import { shortenAddress, toHttpUrl } from '../services/format'
 import { fetchSOLPrice } from '../services/birdeye'
+import { sendSOL as executeSendSOL } from '../services/solana'
+import { supabase } from '../services/supabase'
 
 const HELIUS_RPC = import.meta.env.VITE_SOLANA_RPC ?? 'https://api.mainnet-beta.solana.com'
+
+const SOL_LOGO = 'https://statics.solscan.io/solscan-img/solana_icon.svg'
+
+// Pinned tokens always shown as dedicated rows (like SOL)
+const PINNED_TOKENS = [
+  {
+    mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+    name: 'USD Coin',
+    symbol: 'USDC',
+    logo: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png',
+  },
+  {
+    mint: 'SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3',
+    name: 'Seeker',
+    symbol: 'SKR',
+    logo: 'https://gateway.irys.xyz/uP1dFvCofZQT26m3SKOCttXrir3ORBR1B8wPhP6tv7M?ext=png',
+  },
+] as const
+
+// Well-known token overrides — used to enrich the generic SPL list
+const KNOWN_TOKEN_LOGOS: Record<string, { name: string; symbol: string; logo: string }> = {
+  EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: {
+    name: 'USD Coin', symbol: 'USDC',
+    logo: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png',
+  },
+  SKRbvo6Gf7GondiT3BbTfuRDPqLWei4j2Qy2NPGZhW3: {
+    name: 'Seeker', symbol: 'SKR',
+    logo: 'https://gateway.irys.xyz/uP1dFvCofZQT26m3SKOCttXrir3ORBR1B8wPhP6tv7M?ext=png',
+  },
+  So11111111111111111111111111111111111111112: {
+    name: 'Wrapped SOL', symbol: 'SOL',
+    logo: SOL_LOGO,
+  },
+}
 
 interface SPLBalance {
   mint: string
   symbol: string
+  name: string
+  imageUri: string
   uiAmount: number
 }
 
@@ -19,6 +57,23 @@ interface TxItem {
   timestamp: number
   fee: number
   description?: string
+}
+
+async function getTokenBalance(walletAddress: string, mint: string): Promise<number> {
+  try {
+    const res = await fetch(HELIUS_RPC, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1,
+        method: 'getTokenAccountsByOwner',
+        params: [walletAddress, { mint }, { encoding: 'jsonParsed' }],
+      }),
+    })
+    const data = await res.json() as { result?: { value?: Array<{ account: { data: { parsed: { info: { tokenAmount: { uiAmount: number } } } } } }> } }
+    const accounts = data.result?.value ?? []
+    return accounts.reduce((sum, acc) => sum + (acc.account.data.parsed.info.tokenAmount.uiAmount ?? 0), 0)
+  } catch { return 0 }
 }
 
 async function getSolBalance(address: string): Promise<number> {
@@ -33,7 +88,7 @@ async function getSolBalance(address: string): Promise<number> {
   } catch { return 0 }
 }
 
-async function getSPLBalances(address: string): Promise<SPLBalance[]> {
+async function getSPLBalances(address: string, userId?: string): Promise<SPLBalance[]> {
   try {
     const res = await fetch(HELIUS_RPC, {
       method: 'POST',
@@ -45,13 +100,54 @@ async function getSPLBalances(address: string): Promise<SPLBalance[]> {
       }),
     })
     const data = await res.json() as { result?: { value?: Array<{ account: { data: { parsed: { info: { mint: string; tokenAmount: { uiAmount: number } } } } } }> } }
-    return (data.result?.value ?? [])
+    const onChain = (data.result?.value ?? [])
       .map((acc) => ({
         mint: acc.account.data.parsed.info.mint,
-        symbol: acc.account.data.parsed.info.mint.slice(0, 4).toUpperCase(),
         uiAmount: acc.account.data.parsed.info.tokenAmount.uiAmount ?? 0,
       }))
       .filter((t) => t.uiAmount > 0)
+
+    if (onChain.length === 0) return []
+
+    // Enrich with token metadata from Supabase positions
+    const metaMap = new Map<string, { symbol: string; name: string; imageUri: string }>()
+    if (userId) {
+      const mints = onChain.map((t) => t.mint)
+      const { data: posRows } = await supabase
+        .from('positions')
+        .select('mint, token_symbol, token_name, token_image_uri')
+        .eq('user_pubkey', userId)
+        .in('mint', mints)
+      const { data: tradeRows } = await supabase
+        .from('trades')
+        .select('mint, token_symbol, token_name, token_image_uri')
+        .eq('user_pubkey', userId)
+        .in('mint', mints)
+      ;([...(posRows ?? []), ...(tradeRows ?? [])] as Record<string, unknown>[]).forEach((r) => {
+        const m = r.mint as string
+        if (m && !metaMap.has(m)) {
+          metaMap.set(m, {
+            symbol: (r.token_symbol as string) ?? m.slice(0, 4).toUpperCase(),
+            name: (r.token_name as string) ?? 'Unknown',
+            imageUri: (r.token_image_uri as string) ?? '',
+          })
+        }
+      })
+    }
+
+    return onChain.map((t) => {
+      const known = KNOWN_TOKEN_LOGOS[t.mint]
+      const meta = metaMap.get(t.mint)
+      const symbol = known?.symbol ?? meta?.symbol ?? t.mint.slice(0, 4).toUpperCase()
+      const logo = known?.logo ?? meta?.imageUri ?? ''
+      return {
+        mint: t.mint,
+        symbol,
+        name: known?.name ?? meta?.name ?? t.mint.slice(0, 8) + '…',
+        imageUri: logo,
+        uiAmount: t.uiAmount,
+      }
+    })
   } catch { return [] }
 }
 
@@ -109,7 +205,7 @@ function ExportKeyModal({ wallet, onClose }: { wallet: NonNullable<ReturnType<ty
               <AlertTriangle size={18} className="text-red-400 flex-shrink-0 mt-0.5" />
               <div className="text-red-300 text-sm leading-relaxed">
                 <p className="font-bold mb-1">Never share your private key</p>
-                <p>Anyone with this key has full control of your wallet and all funds. SniperShot will never ask for it.</p>
+                <p>Anyone with this key has full control of your wallet and all funds. Solmint will never ask for it.</p>
               </div>
             </div>
             <p className="text-dark-subtext text-sm">Your private key can be imported into Phantom, Backpack, or any Solana wallet. Store it somewhere safe and offline.</p>
@@ -154,8 +250,10 @@ function ExportKeyModal({ wallet, onClose }: { wallet: NonNullable<ReturnType<ty
 
 export function WalletPage() {
   const { user, wallet, isGuest, openAuthModal } = useAuth()
+  const userId = user?.id
   const [solBalance, setSolBalance] = useState<number | null>(null)
   const [solPrice, setSolPrice] = useState(0)
+  const [pinnedBalances, setPinnedBalances] = useState<Record<string, number>>({})
   const [splBalances, setSplBalances] = useState<SPLBalance[]>([])
   const [txHistory, setTxHistory] = useState<TxItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -165,6 +263,8 @@ export function WalletPage() {
   const [showSend, setShowSend] = useState(false)
   const [sendAddress, setSendAddress] = useState('')
   const [sendAmount, setSendAmount] = useState('')
+  const [sendBusy, setSendBusy] = useState(false)
+  const [sendError, setSendError] = useState('')
 
   const walletAddress = wallet?.publicKey ?? null
 
@@ -172,16 +272,20 @@ export function WalletPage() {
     if (!walletAddress) return
     setLoading(true)
     try {
-      const [sol, spls, txs, price] = await Promise.all([
+      const [sol, spls, txs, price, ...pinnedAmounts] = await Promise.all([
         getSolBalance(walletAddress),
-        getSPLBalances(walletAddress),
+        getSPLBalances(walletAddress, userId),
         getTxHistory(walletAddress),
         fetchSOLPrice(),
+        ...PINNED_TOKENS.map((t) => getTokenBalance(walletAddress, t.mint)),
       ])
       setSolBalance(sol)
       setSplBalances(spls)
       setTxHistory(txs)
-      setSolPrice(price)
+      setSolPrice(price as number)
+      setPinnedBalances(
+        Object.fromEntries(PINNED_TOKENS.map((t, i) => [t.mint, pinnedAmounts[i] as number]))
+      )
     } finally {
       setLoading(false)
     }
@@ -199,6 +303,31 @@ export function WalletPage() {
   }
 
   const solUSD = solBalance !== null && solPrice > 0 ? solBalance * solPrice : null
+
+  const handleSend = useCallback(async () => {
+    if (!wallet) return
+    const amount = parseFloat(sendAmount)
+    if (!sendAddress.trim()) { setSendError('Enter a destination address'); return }
+    if (!amount || amount <= 0) { setSendError('Enter a valid SOL amount'); return }
+    if (solBalance !== null && amount > solBalance - 0.001) {
+      setSendError(`Max: ${(solBalance - 0.001).toFixed(4)} SOL`)
+      return
+    }
+
+    setSendBusy(true)
+    setSendError('')
+    try {
+      await executeSendSOL(wallet, sendAddress.trim(), amount)
+      setShowSend(false)
+      setSendAddress('')
+      setSendAmount('')
+      await loadData()
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : 'Send failed')
+    } finally {
+      setSendBusy(false)
+    }
+  }, [wallet, sendAddress, sendAmount, solBalance, loadData])
 
   // Not logged in
   if (!user && !isGuest) {
@@ -265,7 +394,7 @@ export function WalletPage() {
             <div className="flex items-center gap-2 mb-3">
               <div className="w-2 h-2 rounded-full bg-brand animate-pulse" />
               <span className="text-dark-subtext text-xs font-semibold">Embedded Wallet</span>
-              <span className="ml-auto text-dark-faint text-[10px] font-semibold uppercase tracking-wide">SniperShot</span>
+              <span className="ml-auto text-dark-faint text-[10px] font-semibold uppercase tracking-wide">Solmint</span>
             </div>
             <div className="flex items-center gap-2 mb-3">
               <span className="text-dark-text font-mono text-sm flex-1 truncate">{shortenAddress(walletAddress, 10)}</span>
@@ -290,59 +419,89 @@ export function WalletPage() {
           </div>
         )}
 
-        {/* SOL balance */}
-        <div className="card p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#9945ff20] flex items-center justify-center font-bold text-[#9945ff] text-lg">◎</div>
-            <div>
-              <div className="text-dark-text font-semibold">Solana</div>
-              <div className="text-dark-subtext text-xs">SOL</div>
+        {/* SOL + pinned token rows */}
+        <div className="flex flex-col gap-2">
+          {/* SOL */}
+          <div className="card p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-[#9945ff20] flex-shrink-0 overflow-hidden flex items-center justify-center">
+                <img src={SOL_LOGO} alt="SOL" className="w-7 h-7 object-contain" />
+              </div>
+              <div>
+                <div className="text-dark-text font-semibold">Solana</div>
+                <div className="text-dark-subtext text-xs">SOL</div>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-dark-text font-bold">{loading ? '…' : solBalance !== null ? `◎${solBalance.toFixed(4)}` : '—'}</div>
+              {solUSD !== null && <div className="text-dark-subtext text-xs">${solUSD.toFixed(2)}</div>}
             </div>
           </div>
-          <div className="text-right">
-            <div className="text-dark-text font-bold">{loading ? '…' : solBalance !== null ? `◎${solBalance.toFixed(4)}` : '—'}</div>
-            {solUSD !== null && <div className="text-dark-subtext text-xs">${solUSD.toFixed(2)}</div>}
-          </div>
+
+          {/* USDC, SKR and any other pinned tokens */}
+          {PINNED_TOKENS.map((pt) => (
+            <div key={pt.mint} className="card p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-dark-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
+                  <img
+                    src={pt.logo}
+                    alt={pt.symbol}
+                    className="w-full h-full object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                  />
+                </div>
+                <div>
+                  <div className="text-dark-text font-semibold">{pt.name}</div>
+                  <div className="text-dark-subtext text-xs">{pt.symbol}</div>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-dark-text font-bold">
+                  {loading ? '…' : (pinnedBalances[pt.mint] ?? 0).toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                </div>
+                <div className="text-dark-subtext text-xs">{pt.symbol}</div>
+              </div>
+            </div>
+          ))}
         </div>
 
-        {/* Fund wallet banner */}
+        {/* Empty wallet hint */}
         {solBalance !== null && solBalance === 0 && (
-          <a
-            href="https://transak.com"
-            target="_blank"
-            rel="noreferrer"
-            className="card p-4 flex items-center gap-3 border-brand/20 hover:border-brand/40 transition-colors cursor-pointer"
-          >
+          <div className="card p-4 flex items-center gap-3 border-brand/20">
             <div className="w-10 h-10 rounded-xl bg-brand/10 flex items-center justify-center flex-shrink-0">
               <ArrowDownLeft size={18} className="text-brand" />
             </div>
             <div className="flex-1">
               <div className="text-dark-text font-semibold text-sm">Fund your wallet</div>
-              <div className="text-dark-subtext text-xs">Buy SOL via Transak — credit card, bank transfer, and more</div>
+              <div className="text-dark-subtext text-xs">Send SOL, USDC, or SKR to your address above to get started</div>
             </div>
-            <ExternalLink size={14} className="text-dark-subtext" />
-          </a>
+          </div>
         )}
 
-        {/* SPL tokens */}
-        {splBalances.length > 0 && (
+        {/* Other SPL tokens (excludes pinned mints to avoid duplicates) */}
+        {splBalances.filter((t) => !PINNED_TOKENS.some((pt) => pt.mint === t.mint)).length > 0 && (
           <div>
-            <h2 className="text-dark-subtext text-xs font-bold tracking-widest uppercase mb-2">SPL Tokens</h2>
+            <h2 className="text-dark-subtext text-xs font-bold tracking-widest uppercase mb-2">Other Tokens</h2>
             <div className="flex flex-col gap-2">
-              {splBalances.map((t) => (
-                <div key={t.mint} className="card p-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-full bg-dark-muted flex items-center justify-center text-xs font-bold text-dark-subtext">
-                      {t.symbol.slice(0, 2)}
+              {splBalances
+                .filter((t) => !PINNED_TOKENS.some((pt) => pt.mint === t.mint))
+                .map((t) => (
+                  <div key={t.mint} className="card p-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-9 h-9 rounded-full bg-dark-muted flex-shrink-0 overflow-hidden flex items-center justify-center text-xs font-bold text-dark-subtext">
+                        {toHttpUrl(t.imageUri)
+                          ? <img src={toHttpUrl(t.imageUri)} alt={t.symbol} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                          : t.symbol.slice(0, 2)
+                        }
+                      </div>
+                      <div>
+                        <div className="text-dark-text text-sm font-semibold">{t.name}</div>
+                        <div className="text-dark-subtext text-xs">{t.symbol} · <span className="font-mono">{shortenAddress(t.mint)}</span></div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="text-dark-text text-sm font-semibold">{t.symbol}</div>
-                      <div className="text-dark-subtext text-xs font-mono">{shortenAddress(t.mint)}</div>
-                    </div>
+                    <span className="text-dark-text font-semibold text-sm">{t.uiAmount.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                   </div>
-                  <span className="text-dark-text font-semibold text-sm">{t.uiAmount.toLocaleString()}</span>
-                </div>
-              ))}
+                ))}
             </div>
           </div>
         )}
@@ -411,14 +570,14 @@ export function WalletPage() {
                 </button>
               )}
             </div>
-            <div className="bg-dark-muted rounded-xl p-3 text-dark-subtext text-xs leading-relaxed">
-              Transaction signing coming soon. Export your private key to use this wallet in Phantom or Backpack now.
-            </div>
+            {sendError && <p className="text-red-400 text-sm text-center">{sendError}</p>}
             <button
-              onClick={() => { setShowSend(false); setShowExport(true) }}
+              onClick={handleSend}
+              disabled={sendBusy}
               className="btn-primary w-full justify-center"
             >
-              <Key size={14} /> Export to Phantom to Send
+              {sendBusy ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+              Send SOL
             </button>
           </div>
         </div>

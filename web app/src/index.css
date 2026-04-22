@@ -2,10 +2,41 @@
 @tailwind components;
 @tailwind utilities;
 
+:root,
+[data-theme='dark'] {
+  --color-bg: 10 10 15;
+  --color-card: 18 18 26;
+  --color-border: 30 30 46;
+  --color-muted: 13 13 20;
+  --color-text: 255 255 255;
+  --color-subtext: 221 221 221;
+  --color-faint: 102 102 102;
+  --color-brand: 153 69 255;
+  --color-brand-dark: 119 51 221;
+}
+
+[data-theme='light'] {
+  --color-bg: 242 242 250;
+  --color-card: 255 255 255;
+  --color-border: 226 226 240;
+  --color-muted: 234 234 245;
+  --color-text: 17 17 17;
+  --color-subtext: 68 68 68;
+  --color-faint: 136 136 136;
+  --color-brand: 119 51 221;
+  --color-brand-dark: 98 35 185;
+}
+
 @layer base {
   html {
-    background-color: #0a0f16;
-    color: #f3f6f8;
+    background-color: rgb(var(--color-bg));
+    color: rgb(var(--color-text));
+  }
+
+  body {
+    background-color: rgb(var(--color-bg));
+    color: rgb(var(--color-text));
+    transition: background-color 0.2s ease, color 0.2s ease;
   }
 
   * {
@@ -22,12 +53,12 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #1f2937;
+    background: rgb(var(--color-border));
     border-radius: 4px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #374151;
+    background: rgb(var(--color-faint));
   }
 }
 
@@ -51,6 +82,11 @@
   .stat-pill {
     @apply bg-dark-muted text-dark-subtext text-[10px] font-semibold px-1.5 py-0.5 rounded flex items-center gap-1;
   }
+}
+
+[data-theme='light'] .slide-in-right,
+[data-theme='light'] .fade-in {
+  will-change: transform, opacity;
 }
 
 @keyframes pulse-dot {

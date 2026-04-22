@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { BarChart2, TrendingUp, TrendingDown, ArrowUpRight, RefreshCw, Briefcase, Bot, Loader2 } from 'lucide-react'
+import { BarChart2, TrendingDown, RefreshCw, Briefcase, Bot, Loader2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../services/supabase'
-import { fetchPrice } from '../services/birdeye'
+import { fetchPrice, fetchSOLPrice } from '../services/birdeye'
 import { groqChat } from '../services/groqChat'
 import { formatSol, formatPercent, toHttpUrl, formatAge } from '../services/format'
+import { sellTokenForUser } from '../services/solana'
 
 interface Position {
   mint: string
@@ -16,7 +16,8 @@ interface Position {
   amountTokens: number
   amountSOLSpent: number
   timestamp: number
-  currentPrice?: number
+  currentPriceUsd?: number
+  currentPriceSOL?: number
   isLoading?: boolean
 }
 
@@ -48,8 +49,7 @@ const HEALTH_COLOR: Record<string, string> = { STRONG: '#14f195', NEUTRAL: '#ffc
 const ACTION_COLOR: Record<string, string> = { HOLD: '#9090a0', TAKE_PROFIT: '#14f195', CUT_LOSS: '#ef4444', ADD_MORE: '#9945ff' }
 
 export function PortfolioPage() {
-  const navigate = useNavigate()
-  const { user, isGuest } = useAuth()
+  const { user, isGuest, wallet, openAuthModal } = useAuth()
   const [positions, setPositions] = useState<Position[]>([])
   const [closedTrades, setClosedTrades] = useState<ClosedTrade[]>([])
   const [summary, setSummary] = useState<PortfolioSummary>({ totalPnlSOL: 0, openPositions: 0 })
@@ -57,6 +57,8 @@ export function PortfolioPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [aiAdvice, setAiAdvice] = useState<AIAdvice | null>(null)
   const [aiLoading, setAiLoading] = useState(false)
+  const [sellingMint, setSellingMint] = useState<string | null>(null)
+  const [solUsdPrice, setSolUsdPrice] = useState(0)
 
   const loadPositions = useCallback(async () => {
     if (!user) return
@@ -76,23 +78,30 @@ export function PortfolioPage() {
         .limit(50)
 
       if (posData) {
-        const mapped: Position[] = (posData as Record<string, unknown>[]).map((p) => ({
-          mint: p.mint as string,
+        const mapped: Position[] = (posData as Record<string, unknown>[])
+          .filter((p) => p.closed !== true)
+          .map((p) => ({
+          mint: (p.mint as string) ?? (p.token_mint as string),
           tokenName: (p.token_name as string) ?? 'Unknown',
           tokenSymbol: (p.token_symbol as string) ?? '???',
-          tokenImageUri: (p.token_image_uri as string) ?? '',
+          tokenImageUri: ((p.token_image_uri as string) ?? (p.image_uri as string)) ?? '',
           entryPriceSOL: (p.entry_price_sol as number) ?? 0,
           amountTokens: (p.amount_tokens as number) ?? 0,
-          amountSOLSpent: (p.amount_sol as number) ?? 0,
-          timestamp: new Date((p.created_at as string)).getTime(),
+          amountSOLSpent: ((p.amount_sol as number) ?? (p.amount_sol_spent as number)) ?? 0,
+          timestamp: new Date(((p.created_at as string) ?? (p.opened_at as string) ?? Date.now())).getTime(),
           isLoading: true,
         }))
         setPositions(mapped)
 
-        // Fetch live prices
+        void fetchSOLPrice().then(setSolUsdPrice).catch(() => setSolUsdPrice(0))
+
         mapped.forEach((pos) => {
-          fetchPrice(pos.mint).then((price) => {
-            setPositions((prev) => prev.map((p) => p.mint === pos.mint ? { ...p, currentPrice: price, isLoading: false } : p))
+          fetchPrice(pos.mint).then((priceUsd) => {
+            setPositions((prev) => prev.map((p) => p.mint === pos.mint ? {
+              ...p,
+              currentPriceUsd: priceUsd,
+              isLoading: false,
+            } : p))
           }).catch(() => {
             setPositions((prev) => prev.map((p) => p.mint === pos.mint ? { ...p, isLoading: false } : p))
           })
@@ -104,13 +113,13 @@ export function PortfolioPage() {
       if (tradeData) {
         setClosedTrades((tradeData as Record<string, unknown>[]).map((t) => ({
           id: t.id as string,
-          mint: t.mint as string,
+          mint: ((t.mint as string) ?? (t.token_mint as string)) as string,
           tokenName: (t.token_name as string) ?? 'Unknown',
           tokenSymbol: (t.token_symbol as string) ?? '???',
-          tokenImageUri: (t.token_image_uri as string) ?? '',
+          tokenImageUri: ((t.token_image_uri as string) ?? (t.image_uri as string)) ?? '',
           type: (t.type as 'buy' | 'sell') ?? 'buy',
           amountSOL: (t.amount_sol as number) ?? 0,
-          timestamp: new Date((t.created_at as string)).getTime(),
+          timestamp: new Date(((t.created_at as string) ?? (t.timestamp as string) ?? Date.now())).getTime(),
           txSig: (t.tx_sig as string) ?? '',
         })))
       }
@@ -127,9 +136,17 @@ export function PortfolioPage() {
 
   // Recalculate PnL when prices load
   useEffect(() => {
+    if (solUsdPrice <= 0) return
+    setPositions((prev) => prev.map((position) => ({
+      ...position,
+      currentPriceSOL: position.currentPriceUsd ? position.currentPriceUsd / solUsdPrice : undefined,
+    })))
+  }, [solUsdPrice])
+
+  useEffect(() => {
     const total = positions.reduce((sum, p) => {
-      if (!p.currentPrice || p.currentPrice === 0) return sum
-      const currentValue = (p.amountTokens / 1e9) * p.currentPrice
+      if (!p.currentPriceSOL || p.currentPriceSOL === 0) return sum
+      const currentValue = p.amountTokens * p.currentPriceSOL
       return sum + (currentValue - p.amountSOLSpent)
     }, 0)
     setSummary((s) => ({ ...s, totalPnlSOL: total }))
@@ -140,10 +157,10 @@ export function PortfolioPage() {
     setAiLoading(true)
     try {
       const posData = positions.map((p) => {
-        const pnlPct = p.currentPrice && p.entryPriceSOL
-          ? ((p.currentPrice - p.entryPriceSOL) / p.entryPriceSOL) * 100
+        const pnlPct = p.currentPriceSOL && p.entryPriceSOL
+          ? ((p.currentPriceSOL - p.entryPriceSOL) / p.entryPriceSOL) * 100
           : 0
-        return `${p.tokenSymbol}: entry=${p.entryPriceSOL.toExponential(2)} current=${p.currentPrice?.toExponential(2) ?? 'unknown'} pnl=${pnlPct.toFixed(1)}%`
+        return `${p.tokenSymbol}: entrySOL=${p.entryPriceSOL.toExponential(2)} currentSOL=${p.currentPriceSOL?.toExponential(2) ?? 'unknown'} pnl=${pnlPct.toFixed(1)}%`
       }).join(', ')
 
       const prompt = `Portfolio analysis for Solana memecoins:
@@ -161,11 +178,31 @@ Respond ONLY with JSON: {"health":"STRONG"|"NEUTRAL"|"WEAK","action":"HOLD"|"TAK
 
   const pnlColor = summary.totalPnlSOL >= 0 ? '#14f195' : '#ef4444'
 
-  if (isGuest) return (
+  const handleSellAll = useCallback(async (position: Position) => {
+    if (!user || !wallet) return
+
+    setSellingMint(position.mint)
+    try {
+      await sellTokenForUser({
+        wallet,
+        userId: user.id,
+        mint: position.mint,
+        tokenName: position.tokenName,
+        tokenSymbol: position.tokenSymbol,
+        tokenImageUri: position.tokenImageUri,
+        amountTokens: position.amountTokens,
+      })
+      await loadPositions()
+    } finally {
+      setSellingMint(null)
+    }
+  }, [user, wallet, loadPositions])
+
+  if (!user) return (
     <div className="flex flex-col items-center justify-center h-64 gap-3 px-8">
       <BarChart2 size={32} className="opacity-30 text-dark-subtext" />
       <p className="text-dark-subtext text-sm text-center">Sign in to track your trades and portfolio performance.</p>
-      <button onClick={() => navigate('/')} className="btn-primary text-sm">Sign In</button>
+      <button onClick={openAuthModal} className="btn-primary text-sm">Sign In</button>
     </div>
   )
 
@@ -251,11 +288,11 @@ Respond ONLY with JSON: {"health":"STRONG"|"NEUTRAL"|"WEAK","action":"HOLD"|"TAK
               <h2 className="text-dark-subtext text-xs font-bold tracking-widest uppercase mb-2">Open Positions</h2>
               <div className="flex flex-col gap-3">
                 {positions.map((pos) => {
-                  const pnlPct = pos.currentPrice && pos.entryPriceSOL
-                    ? ((pos.currentPrice - pos.entryPriceSOL) / pos.entryPriceSOL) * 100
+                  const pnlPct = pos.currentPriceSOL && pos.entryPriceSOL
+                    ? ((pos.currentPriceSOL - pos.entryPriceSOL) / pos.entryPriceSOL) * 100
                     : 0
-                  const pnlSOL = pos.currentPrice
-                    ? ((pos.amountTokens / 1e9) * pos.currentPrice) - pos.amountSOLSpent
+                  const pnlSOL = pos.currentPriceSOL
+                    ? (pos.amountTokens * pos.currentPriceSOL) - pos.amountSOLSpent
                     : 0
                   const c = pnlPct >= 0 ? '#14f195' : '#ef4444'
                   return (
@@ -275,14 +312,14 @@ Respond ONLY with JSON: {"health":"STRONG"|"NEUTRAL"|"WEAK","action":"HOLD"|"TAK
                       </div>
                       <div className="flex justify-between border-t border-dark-border pt-3">
                         <MetaItem label="Entry" value={pos.entryPriceSOL.toExponential(2)} />
-                        <MetaItem label="Current" value={pos.isLoading ? '…' : pos.currentPrice ? pos.currentPrice.toExponential(2) : '—'} />
+                        <MetaItem label="Current" value={pos.isLoading ? '…' : pos.currentPriceSOL ? pos.currentPriceSOL.toExponential(2) : '—'} />
                         <MetaItem label="Cost" value={formatSol(pos.amountSOLSpent)} />
                       </div>
                       <button
-                        onClick={() => navigate(`/token/${pos.mint}`)}
+                        onClick={() => void handleSellAll(pos)}
                         className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-red-500/40 bg-red-500/10 text-red-400 text-sm font-bold hover:bg-red-500/20 transition-colors"
                       >
-                        <TrendingDown size={14} /> Sell All
+                        {sellingMint === pos.mint ? <RefreshCw size={14} className="animate-spin" /> : <TrendingDown size={14} />} Sell All
                       </button>
                     </div>
                   )

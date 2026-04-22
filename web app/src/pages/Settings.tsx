@@ -1,38 +1,23 @@
 import { useState } from 'react'
 import { Settings, Bell, Shield, Palette, LogOut, Trash2, AlertTriangle, ChevronRight, Moon, Sun } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
 import { useNavigate } from 'react-router-dom'
-
-interface SniperConfig {
-  takeProfitPercent: number
-  stopLossPercent: number
-  defaultAmount: number
-  defaultSlippage: number
-  autoSnipe: boolean
-  maxAutoSnipes: number
-}
-
-function loadConfig(): SniperConfig {
-  try {
-    const raw = localStorage.getItem('snapshot_sniper_config')
-    if (raw) return JSON.parse(raw)
-  } catch { /* ignore */ }
-  return { takeProfitPercent: 100, stopLossPercent: 30, defaultAmount: 0.1, defaultSlippage: 15, autoSnipe: false, maxAutoSnipes: 3 }
-}
+import { loadSniperConfig, saveSniperConfig, type SniperConfig } from '../services/sniperConfig'
 
 export function SettingsPage() {
   const navigate = useNavigate()
   const { user, isGuest, signOut, deleteAccount } = useAuth()
-  const [config, setConfig] = useState<SniperConfig>(loadConfig)
+  const { isDark, toggleTheme } = useTheme()
+  const [config, setConfig] = useState<SniperConfig>(loadSniperConfig)
   const [saved, setSaved] = useState(false)
-  const [darkMode, setDarkMode] = useState(true)
   const [deleting, setDeleting] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
 
   const saveConfig = (updates: Partial<SniperConfig>) => {
     const next = { ...config, ...updates }
     setConfig(next)
-    localStorage.setItem('snapshot_sniper_config', JSON.stringify(next))
+    saveSniperConfig(next)
     setSaved(true)
     setTimeout(() => setSaved(false), 1500)
   }
@@ -127,9 +112,9 @@ export function SettingsPage() {
         <Section title="Appearance" icon={<Palette size={14} className="text-brand" />}>
           <Toggle
             label="Dark Mode"
-            description="Dark theme (recommended)"
-            value={darkMode}
-            onChange={setDarkMode}
+            description={isDark ? 'Dark theme enabled' : 'Light theme enabled'}
+            value={isDark}
+            onChange={() => toggleTheme()}
           />
         </Section>
 

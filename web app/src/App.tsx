@@ -21,10 +21,21 @@ function AppRoutes() {
   const { showAuthModal, closeAuthModal } = useAuth()
   const onboarded = localStorage.getItem(ONBOARDING_KEY)
 
+  if (!onboarded) {
+    return (
+      <>
+        <Routes>
+          <Route path="/onboarding" element={<OnboardingPage />} />
+          <Route path="*" element={<Navigate to="/onboarding" replace />} />
+        </Routes>
+        <AuthModal visible={showAuthModal} onClose={closeAuthModal} />
+      </>
+    )
+  }
+
   return (
     <>
       <Routes>
-        {!onboarded && <Route path="*" element={<Navigate to="/onboarding" replace />} />}
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/" element={<Layout />}>
           <Route index element={<Navigate to="/feed" replace />} />

@@ -5,6 +5,8 @@ import { useTheme } from '../context/ThemeContext'
 import { useNavigate } from 'react-router-dom'
 import { loadSniperConfig, saveSniperConfig, type SniperConfig } from '../services/sniperConfig'
 
+const ONBOARDING_KEY = 'snipershot_onboarding_done'
+
 export function SettingsPage() {
   const navigate = useNavigate()
   const { user, isGuest, signOut, deleteAccount } = useAuth()
@@ -37,6 +39,11 @@ export function SettingsPage() {
       setDeleting(false)
       setDeleteConfirm(false)
     }
+  }
+
+  const handleReplayOnboarding = () => {
+    localStorage.removeItem(ONBOARDING_KEY)
+    navigate('/onboarding', { replace: true })
   }
 
   return (
@@ -127,6 +134,13 @@ export function SettingsPage() {
 
         {/* Platform info */}
         <Section title="Platform">
+          <button
+            onClick={handleReplayOnboarding}
+            className="flex items-center justify-between py-2 text-left text-dark-subtext text-sm hover:text-dark-text transition-colors"
+          >
+            <span>Replay Onboarding</span>
+            <ChevronRight size={15} />
+          </button>
           <div className="flex items-center justify-between py-2">
             <span className="text-dark-subtext text-sm">Platform Fee</span>
             <span className="text-dark-text font-semibold text-sm">0.5% per swap</span>

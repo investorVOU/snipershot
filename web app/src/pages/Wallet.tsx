@@ -203,15 +203,15 @@ function ExportKeyModal({ wallet, onClose }: { wallet: NonNullable<ReturnType<ty
               <AlertTriangle size={18} className="text-red-400 flex-shrink-0 mt-0.5" />
               <div className="text-red-300 text-sm leading-relaxed">
                 <p className="font-bold mb-1">Never share your private key</p>
-                <p>Anyone with this key has full control of your wallet and all funds. Axyrion will never ask for it.</p>
+                <p>Anyone with this key has full control of your wallet and all funds. The app will never ask you to send it to support or any admin.</p>
               </div>
             </div>
-            <p className="text-dark-subtext text-sm">Your private key can be imported into Phantom, Backpack, or any Solana wallet. Store it somewhere safe and offline.</p>
+            <p className="text-dark-subtext text-sm">This wallet is generated in your browser and stored locally on this device, not behind a separate wallet password on our servers. Export it and store it somewhere safe and offline.</p>
             <button
               onClick={() => setConfirmed(true)}
               className="w-full py-3 rounded-xl bg-red-500/20 border border-red-500/40 text-red-400 font-bold text-sm hover:bg-red-500/30 transition-colors"
             >
-              I understand — show my private key
+              I understand - show my private key
             </button>
           </>
         ) : (
@@ -238,7 +238,7 @@ function ExportKeyModal({ wallet, onClose }: { wallet: NonNullable<ReturnType<ty
                 </button>
               </div>
             )}
-            <p className="text-dark-faint text-xs text-center">This is your 64-byte private key in base58 format — importable into any Solana wallet.</p>
+            <p className="text-dark-faint text-xs text-center">This is your 64-byte private key in base58 format, importable into any Solana wallet.</p>
           </>
         )}
       </div>
@@ -343,7 +343,7 @@ export function WalletPage() {
             <Wallet size={28} className="text-brand" />
           </div>
           <h2 className="text-dark-text font-bold text-lg">Sign in to access your wallet</h2>
-          <p className="text-dark-subtext text-sm">Create an account to get a built-in Solana wallet — no extension needed.</p>
+          <p className="text-dark-subtext text-sm">Create an account to get a built-in Solana wallet generated in your browser - no extension needed.</p>
           <button onClick={openAuthModal} className="btn-primary w-full justify-center py-3">
             <LogIn size={16} /> Sign In
           </button>
@@ -361,7 +361,7 @@ export function WalletPage() {
             <Wallet size={28} className="text-brand" />
           </div>
           <h2 className="text-dark-text font-bold text-lg">Create an account for a wallet</h2>
-          <p className="text-dark-subtext text-sm">Guest mode doesn't include a wallet. Sign up for free to get a built-in Solana address.</p>
+          <p className="text-dark-subtext text-sm">Guest mode doesn't include a wallet. Sign up for free to get a built-in Solana address on this device.</p>
           <button onClick={openAuthModal} className="btn-primary w-full justify-center py-3">
             <LogIn size={16} /> Create Account
           </button>
@@ -398,7 +398,7 @@ export function WalletPage() {
           <div className="card p-4">
             <div className="flex items-center gap-2 mb-3">
               <div className="w-2 h-2 rounded-full bg-brand animate-pulse" />
-              <span className="text-dark-subtext text-xs font-semibold">Embedded Wallet</span>
+              <span className="text-dark-subtext text-xs font-semibold">Built-in Wallet</span>
               <span className="ml-auto text-dark-faint text-[10px] font-semibold uppercase tracking-wide">Axyrion</span>
             </div>
             <div className="flex items-center gap-2 mb-3">
@@ -421,6 +421,9 @@ export function WalletPage() {
                 <ArrowDownLeft size={14} /> Receive
               </button>
             </div>
+            <p className="mt-3 text-[11px] leading-relaxed text-dark-faint">
+              Security note: this wallet&apos;s private key is stored locally in this browser for transaction signing. We are not storing a separate wallet passphrase for you on the backend.
+            </p>
           </div>
         )}
 

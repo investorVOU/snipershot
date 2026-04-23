@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { exportPrivateKeyBase58 } from '../services/walletService'
 import { shortenAddress, toHttpUrl } from '../services/format'
 import { fetchSOLPrice } from '../services/birdeye'
-import { sendSOL as executeSendSOL } from '../services/solana'
+import { getSolBalance as fetchWalletSolBalance, sendSOL as executeSendSOL } from '../services/solana'
 import { supabase } from '../services/supabase'
 import { SwapPanel } from '../components/swap/SwapPanel'
 import { CORE_SWAP_TOKENS, SOL_MINT, USDC_MINT, dedupeSwapTokens } from '../lib/tokens/catalog'
@@ -79,18 +79,6 @@ async function getTokenBalance(walletAddress: string, mint: string): Promise<num
     const data = await res.json() as { result?: { value?: Array<{ account: { data: { parsed: { info: { tokenAmount: { uiAmount: number } } } } } }> } }
     const accounts = data.result?.value ?? []
     return accounts.reduce((sum, acc) => sum + (acc.account.data.parsed.info.tokenAmount.uiAmount ?? 0), 0)
-  } catch { return 0 }
-}
-
-async function getSolBalance(address: string): Promise<number> {
-  try {
-    const res = await fetch(HELIUS_RPC, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getBalance', params: [address] }),
-    })
-    const data = await res.json() as { result?: { value?: number } }
-    return (data.result?.value ?? 0) / 1e9
   } catch { return 0 }
 }
 
@@ -288,7 +276,7 @@ export function WalletPage() {
       })
 
       const [sol, spls, txs, price, swaps, ...pinnedAmounts] = await Promise.all([
-        getSolBalance(walletAddress),
+        fetchWalletSolBalance(walletAddress).catch(() => 0),
         getSPLBalances(walletAddress, userId),
         txHistoryPromise,
         fetchSOLPrice(),
@@ -479,33 +467,6 @@ export function WalletPage() {
           </div>
         )}
 
-        {walletAddress && swapTokens.length > 0 && (
-          <SwapPanel
-            key={preferredSwapMint ?? 'wallet-swap'}
-            tokens={swapTokens}
-            initialInputToken={initialInputToken}
-            initialOutputToken={initialOutputToken}
-            walletConnected={!!wallet && !!user}
-            userWallet={walletAddress}
-            loading={swapLoading}
-            error={swapError}
-            balances={balanceMap}
-            featuredTokens={featuredSwapTokens}
-            recentSwaps={recentSwaps}
-            onSwap={async ({ inputToken, outputToken, amount, slippageBps }) => {
-              const result = await swap({
-                userWallet: walletAddress,
-                inputToken,
-                outputToken,
-                inputAmount: amount,
-                slippageBps,
-              })
-              await loadData()
-              return result
-            }}
-          />
-        )}
-
         {/* SOL + pinned token rows */}
         <div className="flex flex-col gap-2">
           {/* SOL */}
@@ -591,6 +552,33 @@ export function WalletPage() {
                 ))}
             </div>
           </div>
+        )}
+
+        {walletAddress && swapTokens.length > 0 && (
+          <SwapPanel
+            key={preferredSwapMint ?? 'wallet-swap'}
+            tokens={swapTokens}
+            initialInputToken={initialInputToken}
+            initialOutputToken={initialOutputToken}
+            walletConnected={!!wallet && !!user}
+            userWallet={walletAddress}
+            loading={swapLoading}
+            error={swapError}
+            balances={balanceMap}
+            featuredTokens={featuredSwapTokens}
+            recentSwaps={recentSwaps}
+            onSwap={async ({ inputToken, outputToken, amount, slippageBps }) => {
+              const result = await swap({
+                userWallet: walletAddress,
+                inputToken,
+                outputToken,
+                inputAmount: amount,
+                slippageBps,
+              })
+              await loadData()
+              return result
+            }}
+          />
         )}
 
         {/* Tx history */}

@@ -27,6 +27,62 @@ create table if not exists public.launched_tokens (
   raw_provider_response jsonb not null default '{}'::jsonb
 );
 
+alter table public.launched_tokens
+  add column if not exists creator_wallet text,
+  add column if not exists provider text,
+  add column if not exists token_name text,
+  add column if not exists token_symbol text,
+  add column if not exists mint_address text,
+  add column if not exists description text not null default '',
+  add column if not exists image_url text not null default '',
+  add column if not exists metadata_json jsonb not null default '{}'::jsonb,
+  add column if not exists metadata_storage_provider text not null default 'supabase',
+  add column if not exists metadata_public_url text not null default '',
+  add column if not exists twitter_url text not null default '',
+  add column if not exists telegram_url text not null default '',
+  add column if not exists website_url text not null default '',
+  add column if not exists discord_url text not null default '',
+  add column if not exists tx_signature text,
+  add column if not exists initial_buy_enabled boolean not null default false,
+  add column if not exists initial_buy_amount numeric,
+  add column if not exists initial_buy_denomination text,
+  add column if not exists initial_buy_tx_signature text,
+  add column if not exists total_launch_cost numeric,
+  add column if not exists launch_status text not null default 'confirmed',
+  add column if not exists created_at timestamptz not null default timezone('utc', now()),
+  add column if not exists raw_provider_response jsonb not null default '{}'::jsonb;
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'launched_tokens'
+      and column_name = 'creator'
+  ) then
+    execute $sql$
+      update public.launched_tokens
+      set creator_wallet = coalesce(nullif(creator_wallet, ''), nullif(creator, ''))
+      where creator_wallet is null or creator_wallet = ''
+    $sql$;
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'launched_tokens'
+      and column_name = 'creator_address'
+  ) then
+    execute $sql$
+      update public.launched_tokens
+      set creator_wallet = coalesce(nullif(creator_wallet, ''), nullif(creator_address, ''))
+      where creator_wallet is null or creator_wallet = ''
+    $sql$;
+  end if;
+end $$;
+
 create index if not exists launched_tokens_creator_wallet_idx on public.launched_tokens (creator_wallet, created_at desc);
 create index if not exists launched_tokens_provider_idx on public.launched_tokens (provider, created_at desc);
 

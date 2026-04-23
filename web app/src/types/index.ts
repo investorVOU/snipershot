@@ -1,3 +1,5 @@
+export type LaunchSource = 'pumpfun' | 'bags' | 'bonkfun' | 'dexscreener' | 'unknown'
+
 export interface PumpfunToken {
   mint: string
   name: string
@@ -14,6 +16,7 @@ export interface PumpfunToken {
   telegramUrl: string
   websiteUrl: string
   totalSupply: number
+  launchSource?: LaunchSource
 }
 
 export interface TokenOverview {

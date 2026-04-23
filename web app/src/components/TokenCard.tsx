@@ -9,6 +9,8 @@ import { NarrativeTags } from './NarrativeTags'
 import { formatAge, formatMarketCap, toHttpUrl } from '../services/format'
 import { useTheme } from '../context/ThemeContext'
 
+const PUMPFUN_LOGO_URL = 'https://pump.fun/logo.png'
+
 interface TokenVotes {
   upvotes: number
   downvotes: number
@@ -37,6 +39,7 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched }: Props
   const mc = token.overview?.marketCap ?? token.usdMarketCap ?? 0
   const liquidity = token.overview?.liquidity ?? 0
   const isGraduated = token.complete || liquidity > 0
+  const isPumpFunToken = token.launchSource === 'pumpfun' || token.mint.toLowerCase().endsWith('pump')
 
   const vote = (dir: 'up' | 'down') => {
     setVotes((prev) => {
@@ -71,6 +74,15 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched }: Props
             <div className="flex items-center gap-1.5">
               <span className="text-[15px] font-bold text-dark-text truncate leading-none">{token.name}</span>
               <span className="text-[12px] font-semibold text-dark-subtext flex-shrink-0">${token.symbol}</span>
+              {isPumpFunToken && (
+                <img
+                  src={PUMPFUN_LOGO_URL}
+                  alt="pump.fun"
+                  className="h-4 w-auto flex-shrink-0 object-contain"
+                  loading="lazy"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                />
+              )}
             </div>
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[11px] font-medium text-dark-subtext">{formatAge(token.createdTimestamp)}</span>

@@ -121,6 +121,7 @@ export function subscribePumpPortal(onNewToken: TokenCallback): () => void {
           telegramUrl: '',
           websiteUrl: '',
           totalSupply: event.tokenTotalSupply ?? 1_000_000_000,
+          launchSource: 'pumpfun',
         }
 
         onNewToken(token)
@@ -248,6 +249,7 @@ export async function fetchDexScreenerSnapshot(mint: string): Promise<DexScreene
         telegramUrl,
         websiteUrl,
         totalSupply: 1_000_000_000,
+        launchSource: 'dexscreener',
       },
       overview: {
         price,

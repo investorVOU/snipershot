@@ -132,6 +132,7 @@ export function mapDexHotTokenToFeed(token: DexHotToken): FeedToken {
     telegramUrl: '',
     websiteUrl: '',
     totalSupply: 0,
+    launchSource: 'dexscreener',
     rugFilter: null,
     rugFilterLoading: true,
     overview: {

@@ -40,6 +40,7 @@ interface LaunchRow {
   liquidity: number | null
   market_cap: number | null
   usd_market_cap: number | null
+  source: string | null
 }
 
 function isGraduatedToken(token: Pick<FeedToken, 'complete' | 'overview' | 'solInCurve'>): boolean {
@@ -49,6 +50,11 @@ function isGraduatedToken(token: Pick<FeedToken, 'complete' | 'overview' | 'solI
 
 function mapLaunchRow(row: LaunchRow): FeedToken {
   const hasOverviewData = (row.liquidity ?? 0) > 0 || (row.usd_market_cap ?? 0) > 0
+  const inferredSource = row.source === 'pumpfun' || row.source === 'bags' || row.source === 'bonkfun' || row.source === 'dexscreener'
+    ? row.source
+    : row.mint.toLowerCase().endsWith('pump')
+      ? 'pumpfun'
+      : 'unknown'
   return {
     mint: row.mint,
     name: row.name ?? 'Unknown',
@@ -65,6 +71,7 @@ function mapLaunchRow(row: LaunchRow): FeedToken {
     telegramUrl: row.telegram ?? '',
     websiteUrl: row.website ?? '',
     totalSupply: 0,
+    launchSource: inferredSource,
     rugFilter: null,
     rugFilterLoading: true,
     overview: hasOverviewData
@@ -165,7 +172,7 @@ export function FeedPage() {
     const [dbResult, dexTokens] = await Promise.all([
       supabase
         .from('launched_tokens')
-        .select('mint,name,symbol,image_uri,description,creator,twitter,telegram,website,created_timestamp,sol_in_bonding_curve,liquidity,market_cap,usd_market_cap')
+        .select('mint,name,symbol,image_uri,description,creator,twitter,telegram,website,created_timestamp,sol_in_bonding_curve,liquidity,market_cap,usd_market_cap,source')
         .lte('created_timestamp', cutoff)
         .order('created_timestamp', { ascending: false })
         .limit(200),

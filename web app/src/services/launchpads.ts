@@ -1,4 +1,4 @@
-import type { PumpfunToken } from '../types'
+import type { LaunchSource, PumpfunToken } from '../types'
 import { toHttpUrl } from './format'
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
@@ -49,7 +49,7 @@ function coerceTimestamp(coin: Record<string, unknown>): number {
   return n < 1e12 ? n * 1000 : n
 }
 
-function mapGenericCoin(coin: Record<string, unknown>, source: string): PumpfunToken | null {
+function mapGenericCoin(coin: Record<string, unknown>, source: LaunchSource): PumpfunToken | null {
   const mint = coerceMint(coin)
   if (!mint || mint.length < 32) return null
   return {
@@ -68,6 +68,7 @@ function mapGenericCoin(coin: Record<string, unknown>, source: string): PumpfunT
     telegramUrl: coerceStr(coin.telegram ?? coin.telegram_url ?? coin.telegramUrl ?? ''),
     websiteUrl: coerceStr(coin.website ?? coin.website_url ?? coin.websiteUrl ?? ''),
     totalSupply: coerceNum(coin.total_supply ?? coin.totalSupply ?? coin.supply ?? 1_000_000_000),
+    launchSource: source,
   }
 }
 

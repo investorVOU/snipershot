@@ -156,7 +156,6 @@ At a high level:
 - npm
 - a Supabase project
 - a Birdeye API key
-- a Groq API key
 - a Solana RPC endpoint
 
 ### Install
@@ -175,7 +174,6 @@ Current expected variables:
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
 VITE_BIRDEYE_KEY=
-VITE_GROQ_API_KEY=
 VITE_HELIUS_API_KEY=
 VITE_SOLANA_RPC=
 BAGS_API_KEY=
@@ -187,6 +185,7 @@ PINATA_JWT=
 Notes:
 
 - `VITE_BIRDEYE_KEY` is used in local/dev fallback paths.
+- `GROQ_API_KEY` should be configured as a Supabase Edge Function secret for `groq-proxy`, not exposed as a public Vite variable.
 - production Birdeye requests should prefer the Supabase Edge Function secret.
 - `VITE_SOLANA_RPC` should point at a working Solana RPC endpoint.
 

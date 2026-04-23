@@ -6,12 +6,14 @@ import { useWatchlist } from '../hooks/useWatchlist'
 import { TokenCard } from '../components/TokenCard'
 import { SnipeModal } from '../components/SnipeModal'
 import { TickerBar } from '../components/TickerBar'
+import { CreateCoinButton } from '../components/launch/CreateCoinButton'
+import { CreateCoinModal } from '../components/launch/CreateCoinModal'
 import { supabase } from '../services/supabase'
 import { fetchTrendingTokens, fetchTokenOverview, fetchOHLCV, fetchTokenHoldersCount, type TrendingToken } from '../services/birdeye'
 import { runRugFilter } from '../services/rugFilter'
 import { getAITokenRating } from '../services/groq'
 import { formatMarketCap, toHttpUrl } from '../services/format'
-import type { FeedToken, FilterMode } from '../types'
+import type { FeedToken, FilterMode, LaunchWalletContext } from '../types'
 import { useAuth } from '../context/AuthContext'
 import { buyTokenForUser } from '../services/solana'
 import { fetchDexHotTokens, mapDexHotTokenToFeed, type DexHotToken } from '../services/dexscreener'
@@ -26,21 +28,34 @@ const LAUNCH_MATURITY_MS = 30 * 60 * 1000
 const LAUNCHES_CACHE_KEY = 'solmint_launches_cache'
 
 interface LaunchRow {
-  mint: string
-  name: string | null
-  symbol: string | null
-  image_uri: string | null
+  mint?: string | null
+  mint_address?: string | null
+  name?: string | null
+  token_name?: string | null
+  symbol?: string | null
+  token_symbol?: string | null
+  image_uri?: string | null
+  image_url?: string | null
   description: string | null
-  creator: string | null
-  twitter: string | null
-  telegram: string | null
-  website: string | null
-  created_timestamp: number | null
+  creator?: string | null
+  creator_wallet?: string | null
+  twitter?: string | null
+  twitter_url?: string | null
+  telegram?: string | null
+  telegram_url?: string | null
+  website?: string | null
+  website_url?: string | null
+  created_timestamp?: number | null
+  created_at?: string | null
   sol_in_bonding_curve: number | null
   liquidity: number | null
   market_cap: number | null
   usd_market_cap: number | null
   source: string | null
+  provider?: string | null
+  metadata_public_url?: string | null
+  tx_signature?: string | null
+  launch_status?: 'confirmed' | 'partial' | 'failed' | null
 }
 
 function isGraduatedToken(token: Pick<FeedToken, 'complete' | 'overview' | 'solInCurve'>): boolean {
@@ -50,26 +65,29 @@ function isGraduatedToken(token: Pick<FeedToken, 'complete' | 'overview' | 'solI
 
 function mapLaunchRow(row: LaunchRow): FeedToken {
   const hasOverviewData = (row.liquidity ?? 0) > 0 || (row.usd_market_cap ?? 0) > 0
-  const inferredSource = row.source === 'pumpfun' || row.source === 'bags' || row.source === 'bonkfun' || row.source === 'dexscreener'
-    ? row.source
-    : row.mint.toLowerCase().endsWith('pump')
+  const mint = row.mint_address ?? row.mint ?? ''
+  const inferredSource = row.provider === 'pumpfun' || row.provider === 'bags'
+    ? row.provider
+    : row.source === 'pumpfun' || row.source === 'bags' || row.source === 'bonkfun' || row.source === 'dexscreener'
+      ? row.source
+      : mint.toLowerCase().endsWith('pump')
       ? 'pumpfun'
       : 'unknown'
   return {
-    mint: row.mint,
-    name: row.name ?? 'Unknown',
-    symbol: row.symbol ?? '???',
-    imageUri: row.image_uri ?? '',
+    mint,
+    name: row.token_name ?? row.name ?? 'Unknown',
+    symbol: row.token_symbol ?? row.symbol ?? '???',
+    imageUri: row.image_url ?? row.image_uri ?? '',
     description: row.description ?? '',
-    creatorAddress: row.creator ?? '',
-    createdTimestamp: row.created_timestamp ?? Date.now(),
+    creatorAddress: row.creator_wallet ?? row.creator ?? '',
+    createdTimestamp: row.created_timestamp ?? (row.created_at ? new Date(row.created_at).getTime() : Date.now()),
     marketCap: row.market_cap ?? 0,
     usdMarketCap: row.usd_market_cap ?? 0,
     solInCurve: row.sol_in_bonding_curve ?? 0,
     complete: (row.liquidity ?? 0) > 0,
-    twitterUrl: row.twitter ?? '',
-    telegramUrl: row.telegram ?? '',
-    websiteUrl: row.website ?? '',
+    twitterUrl: row.twitter_url ?? row.twitter ?? '',
+    telegramUrl: row.telegram_url ?? row.telegram ?? '',
+    websiteUrl: row.website_url ?? row.website ?? '',
     totalSupply: 0,
     launchSource: inferredSource,
     rugFilter: null,
@@ -84,6 +102,9 @@ function mapLaunchRow(row: LaunchRow): FeedToken {
     creatorDumped: false,
     creatorDumpPct: 0,
     fromCache: true,
+    metadataUrl: row.metadata_public_url ?? undefined,
+    explorerUrl: row.tx_signature ? `https://solscan.io/tx/${row.tx_signature}` : undefined,
+    launchStatus: row.launch_status ?? 'confirmed',
   }
 }
 
@@ -138,6 +159,7 @@ export function FeedPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [snipeToken, setSnipeToken] = useState<FeedToken | null>(null)
+  const [createCoinOpen, setCreateCoinOpen] = useState(false)
 
   // Live feed (New tab)
   const { tokens: liveTokens, allTokens, connected } = useTokenFeed('all')
@@ -154,6 +176,15 @@ export function FeedPage() {
 
   const { toggleWatchlist, isWatched } = useWatchlist()
   const { user, wallet, isGuest, openAuthModal } = useAuth()
+
+  const launchContext: LaunchWalletContext | null = user && wallet ? { userId: user.id, wallet } : null
+  const handleCreateCoinClick = useCallback(() => {
+    if (!user || isGuest || !wallet) {
+      openAuthModal()
+      return
+    }
+    setCreateCoinOpen(true)
+  }, [user, isGuest, wallet, openAuthModal])
 
   useEffect(() => {
     try {
@@ -172,39 +203,10 @@ export function FeedPage() {
     const [dbResult, dexTokens] = await Promise.all([
       supabase
         .from('launched_tokens')
-        .select('mint,name,symbol,image_uri,description,creator,twitter,telegram,website,created_timestamp,sol_in_bonding_curve,liquidity,market_cap,usd_market_cap,source')
-        .lte('created_timestamp', cutoff)
-        .order('created_timestamp', { ascending: false })
+        .select('*')
         .limit(200),
       fetchDexHotTokens(40, 'solana').catch(() => []),
     ])
-
-    if (dexTokens.length > 0) {
-      void supabase.from('launched_tokens').upsert(
-        dexTokens.map((token) => ({
-          mint: token.address,
-          name: token.name,
-          symbol: token.symbol,
-          image_uri: token.logoURI,
-          description: '',
-          creator: '',
-          twitter: '',
-          telegram: '',
-          website: '',
-          created_timestamp: token.createdAt,
-          sol_in_bonding_curve: 0,
-          liquidity: token.liquidity,
-          market_cap: token.marketCap,
-          usd_market_cap: token.marketCap,
-          source: 'dexscreener',
-          last_signature: '',
-          helius_metadata_fetched: false,
-          last_seen_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })),
-        { onConflict: 'mint' }
-      )
-    }
 
     const byMint = new Map<string, FeedToken>()
     ;(dbResult.data as LaunchRow[] | null)?.map(mapLaunchRow).forEach((token) => byMint.set(token.mint, token))
@@ -340,7 +342,6 @@ export function FeedPage() {
 
   const activeTokens = tab === 'launches' ? launchTokens : tab === 'new' ? newTokens : []
   const paged = activeTokens.slice(0, PAGE_SIZE * page)
-
   const newCount = allTokens.filter((t) => !t.fromCache && t.createdTimestamp > cutoff && !isGraduatedToken(t)).length
 
   return (
@@ -431,6 +432,10 @@ export function FeedPage() {
               <X size={14} />
             </button>
           )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          <CreateCoinButton onClick={handleCreateCoinClick} />
         </div>
       </div>
 
@@ -543,6 +548,19 @@ export function FeedPage() {
             slippageBps: slippage * 100,
           })
         }}
+      />
+      <CreateCoinModal
+        visible={createCoinOpen}
+        walletConnected={!!wallet && !!user}
+        walletAddress={wallet?.publicKey ?? null}
+        launchContext={launchContext}
+        onClose={() => setCreateCoinOpen(false)}
+        onLaunched={(token) => {
+          setCreateCoinOpen(false)
+          setTab('launches')
+          setLaunches((prev) => [{ ...token, isNewest: true }, ...prev.map((item) => ({ ...item, isNewest: false }))])
+        }}
+        onViewToken={(mint) => navigate(`/token/${mint}`)}
       />
     </div>
   )

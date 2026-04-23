@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useLocation } from 'react-router-dom'
 import { Wallet, Copy, Check, ExternalLink, QrCode, Send, RefreshCw, ArrowUpRight, ArrowDownLeft, X, Key, Eye, EyeOff, AlertTriangle, LogIn } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { exportPrivateKeyBase58 } from '../services/walletService'
@@ -6,6 +7,11 @@ import { shortenAddress, toHttpUrl } from '../services/format'
 import { fetchSOLPrice } from '../services/birdeye'
 import { sendSOL as executeSendSOL } from '../services/solana'
 import { supabase } from '../services/supabase'
+import { SwapPanel } from '../components/swap/SwapPanel'
+import { CORE_SWAP_TOKENS, SOL_MINT, USDC_MINT, dedupeSwapTokens } from '../lib/tokens/catalog'
+import { useSwap } from '../hooks/useSwap'
+import type { SwapTokenOption } from '../types'
+import { listRecentSwapHistory } from '../lib/supabase/swapRepository'
 
 const HELIUS_RPC = import.meta.env.VITE_SOLANA_RPC ?? 'https://api.mainnet-beta.solana.com'
 
@@ -247,6 +253,7 @@ function ExportKeyModal({ wallet, onClose }: { wallet: NonNullable<ReturnType<ty
 }
 
 export function WalletPage() {
+  const location = useLocation()
   const { user, wallet, isGuest, openAuthModal } = useAuth()
   const userId = user?.id
   const [solBalance, setSolBalance] = useState<number | null>(null)
@@ -255,6 +262,7 @@ export function WalletPage() {
   const [splBalances, setSplBalances] = useState<SPLBalance[]>([])
   const [txHistory, setTxHistory] = useState<TxItem[]>([])
   const [txHistoryError, setTxHistoryError] = useState('')
+  const [recentSwaps, setRecentSwaps] = useState<import('../types').SwapHistoryRow[]>([])
   const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState(false)
   const [showQR, setShowQR] = useState(false)
@@ -264,8 +272,10 @@ export function WalletPage() {
   const [sendAmount, setSendAmount] = useState('')
   const [sendBusy, setSendBusy] = useState(false)
   const [sendError, setSendError] = useState('')
+  const { swap, loading: swapLoading, error: swapError } = useSwap({ wallet })
 
   const walletAddress = wallet?.publicKey ?? null
+  const preferredSwapMint = (location.state as { swapMint?: string } | null)?.swapMint ?? null
 
   const loadData = useCallback(async () => {
     if (!walletAddress) return
@@ -277,17 +287,19 @@ export function WalletPage() {
         return []
       })
 
-      const [sol, spls, txs, price, ...pinnedAmounts] = await Promise.all([
+      const [sol, spls, txs, price, swaps, ...pinnedAmounts] = await Promise.all([
         getSolBalance(walletAddress),
         getSPLBalances(walletAddress, userId),
         txHistoryPromise,
         fetchSOLPrice(),
+        listRecentSwapHistory(walletAddress).catch(() => []),
         ...PINNED_TOKENS.map((t) => getTokenBalance(walletAddress, t.mint)),
       ])
       setSolBalance(sol)
       setSplBalances(spls)
       setTxHistory(txs)
       setSolPrice(price as number)
+      setRecentSwaps(swaps)
       setPinnedBalances(
         Object.fromEntries(PINNED_TOKENS.map((t, i) => [t.mint, pinnedAmounts[i] as number]))
       )
@@ -308,6 +320,46 @@ export function WalletPage() {
   }
 
   const solUSD = solBalance !== null && solPrice > 0 ? solBalance * solPrice : null
+  const swapTokens = useMemo<SwapTokenOption[]>(() => dedupeSwapTokens([
+    ...CORE_SWAP_TOKENS,
+    ...PINNED_TOKENS.map<SwapTokenOption>((token) => ({
+      mint: token.mint,
+      symbol: token.symbol,
+      name: token.name,
+      decimals: token.symbol === 'USDC' ? 6 : 9,
+      logoURI: token.logo,
+      source: 'wallet',
+    })),
+    ...splBalances.map<SwapTokenOption>((token) => ({
+      mint: token.mint,
+      symbol: token.symbol,
+      name: token.name,
+      decimals: token.symbol === 'USDC' ? 6 : 9,
+      logoURI: toHttpUrl(token.imageUri),
+      source: 'wallet',
+    })),
+  ]), [splBalances])
+  const initialInputToken = swapTokens.find((token) => token.mint === SOL_MINT) ?? swapTokens[0]
+  const initialOutputToken = swapTokens.find((token) => token.mint === preferredSwapMint)
+    ?? swapTokens.find((token) => token.mint === USDC_MINT)
+    ?? swapTokens[1]
+    ?? swapTokens[0]
+  const balanceMap = useMemo<Record<string, number>>(() => ({
+    [SOL_MINT]: solBalance ?? 0,
+    ...Object.fromEntries(PINNED_TOKENS.map((token) => [token.mint, pinnedBalances[token.mint] ?? 0])),
+    ...Object.fromEntries(splBalances.map((token) => [token.mint, token.uiAmount])),
+  }), [solBalance, pinnedBalances, splBalances])
+  const featuredSwapTokens = useMemo(() => {
+    const recentTokens = recentSwaps.flatMap((entry) => [
+      swapTokens.find((token) => token.mint === entry.input_mint),
+      swapTokens.find((token) => token.mint === entry.output_mint),
+    ]).filter((token): token is SwapTokenOption => !!token)
+    return dedupeSwapTokens([
+      ...CORE_SWAP_TOKENS,
+      ...recentTokens,
+      ...swapTokens.filter((token) => token.source === 'wallet'),
+    ]).slice(0, 6)
+  }, [recentSwaps, swapTokens])
 
   const handleSend = useCallback(async () => {
     if (!wallet) return
@@ -425,6 +477,33 @@ export function WalletPage() {
               Security note: this wallet&apos;s private key is stored locally in this browser for transaction signing. We are not storing a separate wallet passphrase for you on the backend.
             </p>
           </div>
+        )}
+
+        {walletAddress && swapTokens.length > 0 && (
+          <SwapPanel
+            key={preferredSwapMint ?? 'wallet-swap'}
+            tokens={swapTokens}
+            initialInputToken={initialInputToken}
+            initialOutputToken={initialOutputToken}
+            walletConnected={!!wallet && !!user}
+            userWallet={walletAddress}
+            loading={swapLoading}
+            error={swapError}
+            balances={balanceMap}
+            featuredTokens={featuredSwapTokens}
+            recentSwaps={recentSwaps}
+            onSwap={async ({ inputToken, outputToken, amount, slippageBps }) => {
+              const result = await swap({
+                userWallet: walletAddress,
+                inputToken,
+                outputToken,
+                inputAmount: amount,
+                slippageBps,
+              })
+              await loadData()
+              return result
+            }}
+          />
         )}
 
         {/* SOL + pinned token rows */}

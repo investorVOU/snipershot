@@ -1,10 +1,10 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { ThemeProvider } from './context/ThemeContext'
 import { AuthModal } from './components/AuthModal'
 import { Layout } from './components/Layout'
-import { OnboardingPage } from './pages/Onboarding'
+import { OnboardingFlowPage } from './pages/OnboardingFlow'
 import { FeedPage } from './pages/Feed'
 import { TokenDetailPage } from './pages/TokenDetail'
 import { PortfolioPage } from './pages/Portfolio'
@@ -19,13 +19,24 @@ const ONBOARDING_KEY = 'snipershot_onboarding_done'
 
 function AppRoutes() {
   const { showAuthModal, closeAuthModal } = useAuth()
-  const onboarded = localStorage.getItem(ONBOARDING_KEY)
+  const [onboarded, setOnboarded] = useState(() => Boolean(localStorage.getItem(ONBOARDING_KEY)))
+
+  useEffect(() => {
+    const syncOnboardingState = () => setOnboarded(Boolean(localStorage.getItem(ONBOARDING_KEY)))
+    window.addEventListener('storage', syncOnboardingState)
+    return () => window.removeEventListener('storage', syncOnboardingState)
+  }, [])
+
+  const handleOnboardingComplete = () => {
+    localStorage.setItem(ONBOARDING_KEY, 'true')
+    setOnboarded(true)
+  }
 
   if (!onboarded) {
     return (
       <>
         <Routes>
-          <Route path="/onboarding" element={<OnboardingPage />} />
+          <Route path="/onboarding" element={<OnboardingFlowPage onComplete={handleOnboardingComplete} />} />
           <Route path="*" element={<Navigate to="/onboarding" replace />} />
         </Routes>
         <AuthModal visible={showAuthModal} onClose={closeAuthModal} />
@@ -36,7 +47,7 @@ function AppRoutes() {
   return (
     <>
       <Routes>
-        <Route path="/onboarding" element={<OnboardingPage />} />
+        <Route path="/onboarding" element={<OnboardingFlowPage onComplete={handleOnboardingComplete} />} />
         <Route path="/" element={<Layout />}>
           <Route index element={<Navigate to="/feed" replace />} />
           <Route path="feed" element={<FeedPage />} />

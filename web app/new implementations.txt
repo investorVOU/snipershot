@@ -1,0 +1,682 @@
+Build a production-ready **Token Launch + Swap** feature inside the existing **Axyrion** Solana web app.
+
+## Core context
+Axyrion is a Solana memecoin sniper / trading web app. We are adding a **Create Coin** flow directly inside the **Feed** section, plus a **Swap** feature for SPL tokens. The app is already a web app and should remain **mobile-first**, fast, clean, and premium. Avoid generic AI-looking UI. No cheesy gradients, no overdone glassmorphism, no clutter.
+
+The design language should feel:
+- sharp
+- dark
+- premium
+- Solana-native
+- performance-focused
+- minimal but powerful
+
+Use:
+- React + Vite + TypeScript
+- Tailwind CSS
+- Solana Wallet Adapter
+- Jupiter swap integration for token swaps / routing
+- Supabase for database + storage + launch history
+- clean modular architecture
+- reusable hooks and components
+- proper loading, error, and success states
+
+---
+
+# FEATURE 1: CREATE COIN FLOW
+
+## Product goal
+Inside the **Feed** section, add a visible **Create Coin** button.
+When the user clicks it, a modal opens with **two provider options**:
+1. **Launch on Bags**
+2. **Launch on Pump.fun**
+
+The user selects one provider, fills the token creation form, signs with wallet, submits, and after successful creation:
+- token metadata is stored
+- launch transaction info is stored in Supabase
+- created token appears in local UI immediately
+- token becomes part of Axyrion’s tracked ecosystem
+- token should be tradeable through Jupiter / supported routing once available
+
+Important:
+- build this with a **provider adapter architecture**
+- the UI should not be hardcoded only for one provider
+- create a common launch interface that both Bags and Pump adapters implement
+
+---
+
+## Feed section changes
+In the Feed page:
+- add a **Create Coin** button at the top area
+- keep it premium and compact
+- on mobile it should still be obvious and accessible
+- button opens a modal, not a new page initially
+- modal must feel polished and fast
+
+---
+
+## Step 1 modal: provider selection
+When Create Coin is clicked, show a modal with:
+- title: `Create Coin`
+- subtitle: `Choose where to launch your token`
+- two provider cards:
+  - Bags
+  - Pump.fun
+
+Each provider card should include:
+- provider name
+- short description
+- tiny provider badge/icon
+- one-line note like:
+  - Bags: `Launch with creator-focused flow`
+  - Pump.fun: `Launch into the viral memecoin ecosystem`
+
+After selecting provider, continue to the launch form.
+
+---
+
+## Step 2 modal: token creation form
+The form should support:
+
+### Required fields
+- Token name
+- Token symbol / ticker
+- Description
+- Token image upload
+- X / Twitter link
+- Telegram link
+- Website link
+
+### Optional fields
+- Discord link
+- creator note
+- launch tags / category
+
+### Provider-specific dynamic fields
+Depending on selected provider, show extra provider config if needed.
+Do not clutter the UI.
+Keep the shared form stable and inject provider-specific fields below.
+
+### Validation
+- token name length validation
+- symbol uppercase sanitization
+- file type and image size validation
+- URL validation
+- wallet must be connected
+- disable submit while incomplete
+- show human-friendly inline validation errors
+
+---
+
+## Metadata handling
+Implement token metadata flow properly:
+- image uploads to Supabase Storage
+- metadata JSON is generated and stored
+- retain both uploaded image URL and metadata URL if needed
+- save all metadata references in database
+- keep provider-specific metadata compatible structure isolated in adapter layer
+
+---
+
+## Launch execution architecture
+Create a common interface like:
+
+- `launchToken(provider, payload, walletContext)`
+- providers:
+  - `bagsLaunchAdapter`
+  - `pumpLaunchAdapter`
+
+Each adapter should:
+- prepare provider-specific payload
+- create/sign/send transaction using connected wallet
+- return normalized response:
+  - provider
+  - mint address
+  - signature
+  - explorer url
+  - launchedAt
+  - metadata url
+  - image url
+  - token name
+  - symbol
+  - socials
+  - status
+
+The main UI should not care about provider internals.
+
+---
+
+## Transaction UX
+When submitting launch:
+- show `Preparing launch...`
+- then `Awaiting wallet signature...`
+- then `Submitting transaction...`
+- then `Confirming on-chain...`
+
+On success:
+- show success state modal
+- show token mint
+- show transaction link
+- show quick action buttons:
+  - View token
+  - Swap token
+  - Copy mint
+  - Share
+
+On failure:
+- show clear error
+- if wallet rejected, say so
+- if chain/provider failure, show retry option
+- preserve the form so the user does not lose entered data
+
+---
+
+## Supabase persistence
+After successful launch, save all launch info in Supabase.
+
+Create suitable tables.
+
+### Table: `launched_tokens`
+Fields:
+- id
+- user_wallet
+- provider
+- token_name
+- token_symbol
+- mint_address
+- description
+- image_url
+- metadata_url
+- twitter_url
+- telegram_url
+- website_url
+- discord_url
+- tx_signature
+- explorer_url
+- created_at
+- launch_status
+- raw_provider_response jsonb
+
+### Table: `token_launch_events`
+Fields:
+- id
+- mint_address
+- provider
+- event_type
+- tx_signature
+- payload jsonb
+- created_at
+
+### Optional table: `user_profiles`
+if needed to associate wallet activity with profile metadata
+
+Also:
+- add row-level security guidance
+- only allow wallet owner records where appropriate
+- use secure insert patterns
+- avoid exposing service role in frontend
+
+---
+
+## UI after successful launch
+Once a token is launched:
+- optimistically insert it into the feed
+- mark it with a `Created by you` badge if current wallet launched it
+- render provider badge: Bags or Pump.fun
+- allow quick open to token detail
+- if routing is available, allow immediate swap/trade CTA
+
+---
+
+# FEATURE 2: SWAP FEATURE
+
+## Product goal
+Implement a **Swap** feature inside Axyrion that allows users to swap between:
+- SOL
+- USDC
+- SKR
+- SPL tokens
+- newly launched supported tokens when routing is available
+
+Use **Jupiter** for quote/routing execution.
+This should feel native to the app, fast, and clean.
+
+---
+
+## Swap UI requirements
+Build a premium swap panel with:
+- token input selector
+- token output selector
+- amount input
+- balance display
+- max button
+- quoted output
+- route info
+- price impact
+- slippage settings
+- swap button
+
+Include:
+- reverse tokens button
+- recent / popular tokens
+- token search modal
+- wallet connection state
+- insufficient balance handling
+- loading skeleton while quote fetches
+
+---
+
+## Supported swap behavior
+The user should be able to:
+- swap SOL to SPL token
+- swap SPL token to SOL
+- USDC to SOL
+- SOL to USDC
+- SKR to SOL / USDC / SPL when route exists
+- newly launched token to other supported tokens if Jupiter route exists
+
+If no route exists:
+- show `No route available yet`
+- do not fake tradability
+- keep UI honest and clear
+
+---
+
+## Jupiter integration requirements
+Implement:
+- quote fetching
+- route refresh on input changes
+- slippage controls
+- build swap transaction
+- wallet signing
+- send + confirm transaction
+- success and fail states
+
+Return normalized swap results including:
+- input token
+- output token
+- input amount
+- output amount
+- route summary
+- tx signature
+- timestamp
+
+---
+
+## Supabase for swaps
+Create a `swap_history` table:
+- id
+- user_wallet
+- input_mint
+- output_mint
+- input_symbol
+- output_symbol
+- input_amount
+- output_amount
+- tx_signature
+- route_summary jsonb
+- created_at
+
+Show recent swaps in the user experience where useful.
+
+---
+
+# FEATURE 3: TOKEN DETAIL + TRADABILITY HOOKS
+
+After a user launches a token:
+- create a token detail view or modal
+- show:
+  - token image
+  - name
+  - symbol
+  - mint
+  - provider
+  - links
+  - launch signature
+  - created time
+  - swap CTA
+  - copy mint CTA
+
+Implement logic that checks whether the token is currently tradable/routable via Jupiter.
+If yes:
+- enable trade/swap CTA
+If not:
+- show pending or unavailable status clearly
+
+Do not mislead users by saying immediately tradable unless route actually exists.
+
+---
+
+# FEATURE 4: ARCHITECTURE
+
+Structure code cleanly:
+
+## Suggested folders
+- `components/feed`
+- `components/launch`
+- `components/swap`
+- `components/tokens`
+- `hooks`
+- `lib/solana`
+- `lib/jupiter`
+- `lib/providers/bags`
+- `lib/providers/pump`
+- `lib/supabase`
+- `types`
+- `stores` if needed
+
+## Required abstractions
+- wallet hook
+- token launch hook
+- swap hook
+- quote hook
+- token metadata helper
+- Supabase repository helpers
+- provider adapter interface
+
+Keep logic out of UI components as much as possible.
+
+---
+
+# FEATURE 5: UX / DESIGN RULES
+
+## General design
+- dark background
+- subtle borders
+- strong spacing
+- clean typography
+- single purple accent if needed
+- premium trading-terminal feel
+- no generic AI aesthetic
+- no massive glowing elements
+- no childish meme visuals
+
+## Modal behavior
+- smooth open/close transitions
+- keyboard and mobile friendly
+- sticky action footer if needed
+- responsive on mobile
+
+## States to handle
+- wallet disconnected
+- loading quote
+- wallet signature pending
+- transaction pending
+- success
+- failure
+- no route available
+- provider unavailable
+- upload failure
+- metadata save failure
+- Supabase insert failure
+
+---
+
+# FEATURE 6: SAFETY + INTEGRITY
+
+Important product rules:
+- do not promise token is safe
+- do not claim liquidity exists if not verified
+- do not claim immediate tradability unless route exists
+- clearly separate launch success from swap availability
+- handle wallet rejection gracefully
+- all sends must be user-signed
+- do not custody funds
+- avoid exposing sensitive keys in client
+
+---
+
+# FEATURE 7: IMPLEMENTATION DELIVERABLES
+
+Generate all of the following:
+
+1. React UI components for:
+- Create Coin button
+- provider selection modal
+- token creation form modal
+- success modal
+- swap panel
+- token selector modal
+- token detail card / view
+
+2. Hooks:
+- `useLaunchToken`
+- `useSwap`
+- `useJupiterQuote`
+- `useTokenTradability`
+
+3. Provider adapter scaffolding:
+- Bags adapter
+- Pump adapter
+- shared interface and types
+
+4. Supabase schema SQL for:
+- `launched_tokens`
+- `token_launch_events`
+- `swap_history`
+
+5. TypeScript types for:
+- launch payload
+- provider config
+- normalized launch result
+- normalized swap result
+- token metadata
+- db rows
+
+6. Utility helpers for:
+- upload image to Supabase Storage
+- save metadata
+- sanitize symbol
+- validate social links
+- copy mint
+- format addresses and amounts
+
+7. Clean placeholder mock implementation where provider-specific transaction details are not yet wired
+- clearly mark TODO sections
+- but structure everything as production-grade
+
+---
+
+# FEATURE 8: USER FLOW SUMMARY
+
+## Launch flow
+Feed page → Create Coin button → provider selection → token form → wallet sign → submit → confirm → save to Supabase → show success → add token to feed → allow swap if route available
+
+## Swap flow
+Open swap panel → choose input/output tokens → fetch Jupiter quote → wallet signs → send tx → confirm → save to Supabase → show success
+
+---
+
+# FEATURE 9: OUTPUT EXPECTATION
+
+Return:
+- code files
+- component files
+- hook files
+- TypeScript types
+- SQL schema
+- adapter scaffolding
+- all necessary integration points
+- comments where real Bags/Pump transaction wiring should be inserted
+
+Do not return vague explanations only.
+Produce real implementation-ready code with a clean architecture.
+
+Prioritize:
+- maintainability
+- clarity
+- mobile responsiveness
+- production-minded structure
+- honest tradability checks
+- premium UI quality  			,   Update the Axyrion Token Launch feature with the following rules:
+
+## Metadata ownership rules
+Axyrion must maintain its own canonical metadata record for every launched token in Supabase, regardless of provider.
+
+### Canonical app metadata to store
+- token name
+- symbol
+- description
+- image_url
+- metadata_json
+- metadata_storage_provider
+- metadata_public_url
+- twitter_url
+- telegram_url
+- website_url
+- discord_url
+- creator_wallet
+- launch_provider
+- mint_address
+- tx_signature
+- created_at
+
+### Provider-specific metadata behavior
+Implement metadata handling by provider:
+
+#### Pump.fun
+- Pump launch flow must NOT depend on old direct metadata upload endpoints
+- upload token image and metadata JSON using Axyrion-managed storage flow
+- support IPFS-compatible metadata URL generation for Pump launch usage
+- pass provider-compatible metadata URL into Pump launch adapter
+- keep Supabase copy of metadata for Axyrion indexing/history
+
+#### Bags
+- support Bags launch flow with metadata/image inputs according to provider requirements
+- still persist the same canonical metadata into Supabase
+- normalize Bags metadata response into Axyrion’s internal schema
+
+---
+
+## Creator initial buy support
+The launch form must include an optional **Initial Buy** section so users can buy their token at launch the same way launchpads support creator/dev initial buys.
+
+### Initial Buy UI
+Add:
+- toggle: `Buy at launch`
+- input: `Initial buy amount`
+- denomination selector:
+  - SOL
+  - optional lamports internally
+- helper text explaining this is the creator’s initial buy submitted during launch
+
+### Initial Buy behavior
+- If enabled, include initial buy params in the provider adapter
+- launch + initial buy should happen in the same provider-specific flow where supported
+- clearly show fees/slippage where applicable
+- if provider does not support the requested flow, show a clear error and block submission
+- save initial buy details in Supabase
+
+### Save these fields
+In `launched_tokens` add:
+- initial_buy_enabled boolean
+- initial_buy_amount numeric
+- initial_buy_denomination text
+- initial_buy_tx_signature text nullable
+- total_launch_cost numeric nullable
+
+---
+
+## Provider adapter updates
+
+### Shared interface
+Update launch adapter interface to support:
+- provider
+- token metadata payload
+- initialBuy configuration
+- wallet context
+
+### Bags adapter
+The Bags adapter must support:
+- launch with metadata
+- optional initial buy
+- normalized result fields:
+  - mint address
+  - metadata url
+  - launch signature
+  - initial buy signature if separate
+  - provider-specific config keys if returned
+
+### Pump adapter
+The Pump adapter must support:
+- Axyrion-managed metadata upload flow
+- provider-compatible token creation
+- optional initial dev buy if supported in the flow
+- normalized result fields:
+  - mint address
+  - metadata url
+  - launch signature
+  - initial buy signature if separate
+
+---
+
+## Database updates
+
+### Table: launched_tokens
+Add or include:
+- creator_wallet
+- provider
+- token_name
+- token_symbol
+- mint_address
+- description
+- image_url
+- metadata_json jsonb
+- metadata_storage_provider
+- metadata_public_url
+- twitter_url
+- telegram_url
+- website_url
+- discord_url
+- tx_signature
+- initial_buy_enabled
+- initial_buy_amount
+- initial_buy_denomination
+- initial_buy_tx_signature
+- total_launch_cost
+- created_at
+- raw_provider_response jsonb
+
+### Table: token_launch_events
+Track:
+- launch_submitted
+- launch_confirmed
+- initial_buy_submitted
+- initial_buy_confirmed
+- metadata_uploaded
+- metadata_saved
+
+---
+
+## UX rules
+On the final confirmation screen before signing, show:
+- provider selected
+- token name / symbol
+- metadata preview
+- initial buy enabled or disabled
+- estimated spend
+- wallet confirmation reminder
+
+On success, show:
+- token mint
+- launch confirmed
+- initial buy confirmed status
+- View token
+- Swap token
+- Copy mint
+- Share
+
+If launch succeeds but initial buy fails:
+- show partial success clearly
+- save both statuses separately
+- do not present it as fully successful
+
+---
+
+## Integrity rules
+- Never claim instant tradability unless a real route exists
+- Never claim liquidity exists unless verified
+- Clearly separate:
+  - token created
+  - initial buy completed
+  - tradable via Jupiter

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronRight, ShieldCheck, Wallet, Zap } from 'lucide-react'
+import { ArrowLeft, ChevronRight, ShieldCheck, Wallet, Zap } from 'lucide-react'
 
 const ONBOARDING_KEY = 'snipershot_onboarding_done'
 
@@ -8,40 +8,44 @@ const SLIDES = [
   {
     num: '01',
     accent: '#14f195',
-    title: 'Scan launches\nin real time',
-    body: 'Track fresh Solana tokens the moment they appear, inspect the chart, and move from discovery to execution without hopping between tools.',
-    points: ['Live feed for new launches', 'Fast token detail drill-down', 'Built for sniper-style execution'],
+    eyebrow: 'Launch feed',
+    title: 'Catch new launches before the crowd settles in',
+    body: 'Monitor fresh Solana pairs in one view, open details fast, and move from discovery to decision without bouncing between tabs.',
+    points: ['Fresh launches stream live', 'Fast drill-down into token context', 'Built around quick sniper entry checks'],
     Illus: IllusSnipe,
   },
   {
     num: '02',
     accent: '#9945ff',
-    title: 'Filter out obvious\nbad setups',
-    body: 'Use on-chain checks, liquidity signals, holder context, and AI-assisted screening to separate safer launches from obvious rugs and weak entries.',
-    points: ['Safety labels before entry', 'Wallet and holder context', 'Faster go / no-go decisions'],
+    eyebrow: 'Risk filter',
+    title: 'Kill weak setups early',
+    body: 'Read liquidity, holder concentration, wallet behavior, and AI-assisted screening before you commit capital.',
+    points: ['Safety labels before entry', 'Holder and wallet context inline', 'Cleaner go or no-go decisions'],
     Illus: IllusShield,
   },
   {
     num: '03',
     accent: '#27c985',
-    title: 'Trade from one\nbuilt-in flow',
-    body: 'Sign in, get a generated Solana wallet for this device, fund it, then buy, sell, send, and manage positions inside the app.',
-    points: ['Account wallet is generated on this device', 'Fund it with SOL or supported SPL tokens', 'Use the same flow for sniping and management'],
+    eyebrow: 'Execution',
+    title: 'Trade from the same flow you used to research',
+    body: 'Sign in, get a local device wallet, fund it, then buy, sell, send, and manage positions without switching tools.',
+    points: ['Wallet is generated on this device', 'Fund it with SOL or supported SPL tokens', 'Use one flow for entry and management'],
     Illus: IllusAuto,
   },
   {
     num: '04',
     accent: '#ffb84d',
-    title: 'Wallet safety,\nclearly explained',
-    body: 'We do not store a separate wallet password or passphrase for you. The current app build generates a wallet in your browser and stores the private key locally on that device so it can sign transactions and let you export it later.',
-    points: ['Not stored on our server', 'Stored locally in this browser', 'If browser storage is cleared before export, access can be lost'],
+    eyebrow: 'Wallet model',
+    title: 'Wallet behavior is explicit, not hidden',
+    body: 'This build stores the generated wallet key locally in your browser on this device. We do not keep a separate wallet password or passphrase for you on our servers.',
+    points: ['Not stored on our backend', 'Local browser storage powers signing', 'Clearing browser storage before export can remove access'],
     Illus: IllusWallet,
   },
 ] as const
 
 function IllusSnipe() {
   return (
-    <svg width="200" height="140" viewBox="0 0 200 140" fill="none">
+    <svg width="180" height="124" viewBox="0 0 200 140" fill="none">
       <circle cx="100" cy="70" r="50" stroke="#14f19530" strokeWidth="1.5" />
       <circle cx="100" cy="70" r="35" stroke="#14f19540" strokeWidth="1.5" />
       <circle cx="100" cy="70" r="20" stroke="#14f195" strokeWidth="2" />
@@ -61,7 +65,7 @@ function IllusSnipe() {
 
 function IllusShield() {
   return (
-    <svg width="200" height="140" viewBox="0 0 200 140" fill="none">
+    <svg width="180" height="124" viewBox="0 0 200 140" fill="none">
       <path d="M100 15 L150 35 L150 80 Q150 115 100 130 Q50 115 50 80 L50 35 Z" fill="#9945ff15" stroke="#9945ff60" strokeWidth="1.5" />
       <path d="M100 30 L135 46 L135 80 Q135 108 100 118 Q65 108 65 80 L65 46 Z" fill="#9945ff10" stroke="#9945ff40" strokeWidth="1" />
       <path d="M82 72 L95 85 L120 58" stroke="#9945ff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
@@ -77,7 +81,7 @@ function IllusShield() {
 
 function IllusAuto() {
   return (
-    <svg width="200" height="140" viewBox="0 0 200 140" fill="none">
+    <svg width="180" height="124" viewBox="0 0 200 140" fill="none">
       <polyline points="20,110 50,90 75,95 100,60 125,45 150,30 180,20" fill="none" stroke="#27c985" strokeWidth="2" strokeLinejoin="round" />
       <polygon points="20,110 50,90 75,95 100,60 125,45 150,30 180,20 180,130 20,130" fill="#27c98515" />
       <line x1="20" y1="35" x2="180" y2="35" stroke="#14f19560" strokeWidth="1" strokeDasharray="4 3" />
@@ -92,7 +96,7 @@ function IllusAuto() {
 
 function IllusWallet() {
   return (
-    <svg width="200" height="140" viewBox="0 0 200 140" fill="none">
+    <svg width="180" height="124" viewBox="0 0 200 140" fill="none">
       <rect x="42" y="26" width="116" height="82" rx="18" fill="#ffb84d12" stroke="#ffb84d66" strokeWidth="1.5" />
       <rect x="54" y="42" width="92" height="18" rx="9" fill="#ffb84d20" />
       <circle cx="70" cy="51" r="4" fill="#ffb84d" />
@@ -121,140 +125,163 @@ export function OnboardingPage() {
 
   const next = () => {
     if (isLast) finish()
-    else setIndex((i) => i + 1)
+    else setIndex((current) => current + 1)
+  }
+
+  const previous = () => {
+    setIndex((current) => Math.max(0, current - 1))
   }
 
   return (
-    <div className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(20,241,149,0.08),_transparent_22%),radial-gradient(circle_at_bottom_right,_rgba(255,184,77,0.08),_transparent_28%),linear-gradient(180deg,_#090d14_0%,_#0a0f16_100%)] px-4 py-4 sm:px-5 sm:py-6 lg:px-8 lg:py-8">
-      <div className="mx-auto flex min-h-[calc(100vh-2rem)] max-w-7xl flex-col gap-5 lg:min-h-[calc(100vh-4rem)] lg:flex-row lg:items-stretch lg:gap-8">
-        <section className="hidden lg:flex lg:w-[min(40%,460px)] lg:flex-col lg:justify-between lg:rounded-[36px] lg:border lg:border-white/6 lg:bg-white/[0.03] lg:p-8 lg:shadow-[0_30px_80px_rgba(0,0,0,0.28)]">
-          <div className="space-y-6">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/4 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8e9aa8]">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(20,241,149,0.12),_transparent_22%),radial-gradient(circle_at_bottom_right,_rgba(255,184,77,0.1),_transparent_28%),linear-gradient(180deg,_#090d14_0%,_#0a0f16_100%)] px-4 py-4 sm:px-5 sm:py-5">
+      <div className="mx-auto flex min-h-[calc(100vh-2rem)] max-w-6xl flex-col rounded-[28px] bg-[linear-gradient(180deg,_rgba(255,255,255,0.03),_rgba(255,255,255,0.015))] p-4 shadow-[0_28px_90px_rgba(0,0,0,0.34)] backdrop-blur sm:min-h-[calc(100vh-2.5rem)] sm:p-5 lg:grid lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-6 lg:rounded-[32px] lg:p-6">
+        <aside className="hidden lg:flex lg:flex-col lg:justify-between">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/[0.05] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#90a0b1]">
               <Zap size={12} className="text-brand" />
               Sniper Shot
             </div>
-            <div className="space-y-4">
-              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-[#637081]">Solana Launch Intelligence</p>
-              <h1 className="max-w-sm text-5xl font-extrabold leading-[1.02] text-dark-text">
-                Research fast.
-                <br />
-                Trade faster.
-              </h1>
-              <p className="max-w-md text-base leading-7 text-[#98a3b1]">
-                A sniper workflow for finding launches, filtering risk, and executing from the same interface without hiding how the wallet model actually works.
-              </p>
-            </div>
+            <h1 className="mt-5 max-w-[12ch] text-[34px] font-extrabold leading-[1.02] text-dark-text">
+              Faster research.
+              <br />
+              Cleaner entry.
+            </h1>
+            <p className="mt-3 max-w-[28ch] text-sm leading-6 text-[#8f9aa7]">
+              The onboarding is now a compact briefing. Pick a step, skim the key point, move on.
+            </p>
           </div>
 
-          <div className="space-y-3">
-            {SLIDES.map((item, i) => (
-              <button
-                key={item.num}
-                onClick={() => setIndex(i)}
-                className={`flex w-full items-start gap-4 rounded-2xl border px-4 py-4 text-left transition-colors ${
-                  i === index
-                    ? 'border-white/10 bg-white/[0.05]'
-                    : 'border-white/5 bg-transparent hover:border-white/8 hover:bg-white/[0.025]'
-                }`}
-              >
-                <span className="text-2xl font-extrabold" style={{ color: item.accent + '80' }}>{item.num}</span>
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-dark-text">{item.title.replace('\n', ' ')}</div>
-                  <div className="mt-1 text-sm leading-6 text-[#8290a0]">{item.body}</div>
-                </div>
-              </button>
-            ))}
+          <div className="space-y-2">
+            {SLIDES.map((item, itemIndex) => {
+              const active = itemIndex === index
+              return (
+                <button
+                  key={item.num}
+                  onClick={() => setIndex(itemIndex)}
+                  className="flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left transition-colors hover:bg-white/[0.04]"
+                  style={{ backgroundColor: active ? 'rgba(255,255,255,0.06)' : 'transparent' }}
+                >
+                  <span className="mt-0.5 text-xs font-bold tracking-[0.22em]" style={{ color: active ? item.accent : '#627082' }}>
+                    {item.num}
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[#627082]">{item.eyebrow}</div>
+                    <div className="mt-1 text-sm font-semibold leading-5 text-dark-text">{item.title}</div>
+                  </div>
+                </button>
+              )
+            })}
           </div>
-        </section>
+        </aside>
 
-        <section className="flex min-h-[calc(100vh-2rem)] flex-1 flex-col overflow-hidden rounded-[28px] border border-white/6 bg-[radial-gradient(circle_at_top,_rgba(20,241,149,0.12),_transparent_28%),radial-gradient(circle_at_bottom_right,_rgba(255,184,77,0.12),_transparent_34%),linear-gradient(180deg,_#0d131c_0%,_#090d14_100%)] shadow-[0_30px_80px_rgba(0,0,0,0.45)] sm:rounded-[32px] lg:min-h-full">
-          <div className="flex w-full items-center justify-between px-5 pt-5 sm:px-6 sm:pt-6 lg:hidden">
-            <div className="flex items-center gap-2 rounded-full border border-white/8 bg-white/4 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8e9aa8]">
+        <section className="flex min-h-0 flex-1 flex-col">
+          <div className="flex items-center justify-between gap-3">
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/[0.05] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#90a0b1] lg:hidden">
               <Zap size={12} className="text-brand" />
               Sniper Shot
             </div>
-            <button onClick={finish} className="text-[#627082] text-sm font-semibold hover:text-dark-subtext transition-colors">
+            <button onClick={finish} className="text-sm font-semibold text-[#728091] transition-colors hover:text-dark-text">
               Skip
             </button>
           </div>
 
-          <div className="flex flex-1 flex-col justify-between px-5 pb-5 pt-4 sm:px-6 sm:pb-6 lg:grid lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] lg:gap-8 lg:px-8 lg:py-8">
-            <div className="flex min-h-0 flex-col justify-center">
-              <div className="fade-in flex w-full justify-center lg:justify-start" key={index}>
+          <div className="mt-4 grid gap-4 lg:mt-2 lg:grid-cols-[minmax(0,1.1fr)_320px] lg:gap-5">
+            <div className="rounded-[24px] bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.06),_transparent_58%)] p-4 sm:p-5 lg:p-6">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#667384]">{slide.eyebrow}</div>
+                  <div className="mt-2 flex items-center gap-3">
+                    <span className="text-3xl font-extrabold sm:text-[40px]" style={{ color: `${slide.accent}4d` }}>
+                      {slide.num}
+                    </span>
+                    <div className="h-px w-10" style={{ backgroundColor: slide.accent }} />
+                  </div>
+                </div>
+                <div className="hidden h-10 w-10 items-center justify-center rounded-2xl sm:flex" style={{ backgroundColor: `${slide.accent}14`, color: slide.accent }}>
+                  {slide.num === '04' ? <ShieldCheck size={18} /> : slide.num === '03' ? <Wallet size={18} /> : <Zap size={18} />}
+                </div>
+              </div>
+
+              <div className="fade-in mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_230px]" key={index}>
+                <div className="min-w-0">
+                  <h2 className="max-w-[16ch] text-[28px] font-extrabold leading-[1.04] text-dark-text sm:text-[34px]">
+                    {slide.title}
+                  </h2>
+                  <p className="mt-3 max-w-[60ch] text-sm leading-6 text-[#9aa5b3] sm:text-[15px] sm:leading-7">
+                    {slide.body}
+                  </p>
+                </div>
+
                 <div
-                  className="flex h-[180px] w-full items-center justify-center rounded-[24px] border border-white/6 bg-white/[0.03] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] sm:h-[220px] lg:h-[320px] lg:max-w-[620px] lg:rounded-[30px]"
-                  style={{ boxShadow: `0 20px 60px ${slide.accent}12, inset 0 1px 0 rgba(255,255,255,0.04)` }}
+                  className="flex h-[140px] items-center justify-center rounded-[22px] sm:h-[168px] lg:h-full"
+                  style={{ background: `linear-gradient(180deg, ${slide.accent}12 0%, rgba(255,255,255,0.02) 100%)` }}
                 >
                   <slide.Illus />
                 </div>
               </div>
-
-              <div className="mt-6 w-full fade-in lg:mt-8" key={`text-${index}`}>
-                <div className="mb-4 flex items-center gap-3">
-                  <span className="text-4xl font-extrabold sm:text-5xl" style={{ color: slide.accent + '40' }}>{slide.num}</span>
-                  <div className="h-0.5 w-12 rounded-full" style={{ backgroundColor: slide.accent }} />
-                </div>
-                <h2 className="mb-3 whitespace-pre-line text-[26px] font-extrabold leading-tight text-dark-text sm:text-[30px] lg:max-w-[12ch] lg:text-[42px]">
-                  {slide.title}
-                </h2>
-                <p className="max-w-2xl text-[15px] leading-relaxed text-[#9ba6b3] sm:text-base sm:leading-7">
-                  {slide.body}
-                </p>
-              </div>
             </div>
 
-            <div className="mt-6 flex flex-col justify-between lg:mt-0">
-              <div className="grid gap-2.5 sm:gap-3 lg:mt-auto">
+            <div className="flex flex-col gap-3 rounded-[24px] bg-white/[0.03] p-4 sm:p-5">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-semibold text-dark-text">What matters here</div>
+                <div className="text-xs font-semibold text-[#6f7d8d]">
+                  {index + 1}/{SLIDES.length}
+                </div>
+              </div>
+
+              <div className="grid gap-2">
                 {slide.points.map((point) => (
-                  <div key={point} className="flex items-center gap-3 rounded-2xl border border-white/6 bg-white/[0.035] px-3.5 py-3 text-sm text-[#dde3ea] sm:px-4 sm:py-3.5">
+                  <div key={point} className="flex items-start gap-3 rounded-2xl bg-white/[0.035] px-3.5 py-3 text-sm leading-5 text-[#d7dee5]">
                     {slide.num === '04' ? (
-                      <ShieldCheck size={16} style={{ color: slide.accent }} className="flex-shrink-0" />
+                      <ShieldCheck size={15} style={{ color: slide.accent }} className="mt-0.5 flex-shrink-0" />
                     ) : slide.num === '03' ? (
-                      <Wallet size={16} style={{ color: slide.accent }} className="flex-shrink-0" />
+                      <Wallet size={15} style={{ color: slide.accent }} className="mt-0.5 flex-shrink-0" />
                     ) : (
-                      <div className="h-2 w-2 rounded-full flex-shrink-0" style={{ backgroundColor: slide.accent }} />
+                      <div className="mt-[7px] h-2 w-2 flex-shrink-0 rounded-full" style={{ backgroundColor: slide.accent }} />
                     )}
                     <span>{point}</span>
                   </div>
                 ))}
               </div>
 
-              <div className="mt-6 flex flex-col gap-5">
-                <div className="flex items-center gap-2 justify-center lg:justify-start">
-                  {SLIDES.map((item, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setIndex(i)}
-                      aria-label={`Go to slide ${i + 1}`}
-                      className="rounded-full transition-all duration-300"
-                      style={{
-                        width: i === index ? 24 : 8,
-                        height: 8,
-                        backgroundColor: i === index ? item.accent : '#1f2937',
-                      }}
-                    />
-                  ))}
-                </div>
+              {slide.num === '04' && (
+                <p className="text-xs leading-5 text-[#7f8a98]">
+                  This note reflects the wallet implementation in the current build.
+                </p>
+              )}
 
-                <div className="flex items-center justify-between gap-3">
-                  <button onClick={finish} className="hidden text-sm font-semibold text-[#627082] transition-colors hover:text-dark-subtext lg:inline-flex">
-                    Skip Intro
-                  </button>
+              <div className="mt-1 flex items-center gap-2">
+                {SLIDES.map((item, itemIndex) => (
                   <button
-                    onClick={next}
-                    className="w-full flex items-center justify-center gap-2 rounded-2xl py-4 text-[15px] font-bold transition-colors lg:w-auto lg:min-w-[220px] lg:px-8"
-                    style={{ backgroundColor: slide.accent, color: '#08110d' }}
-                  >
-                    {isLast ? 'Continue to App' : 'Next'}
-                    <ChevronRight size={18} />
-                  </button>
-                </div>
+                    key={item.num}
+                    onClick={() => setIndex(itemIndex)}
+                    aria-label={`Go to step ${itemIndex + 1}`}
+                    className="h-2 rounded-full transition-all duration-300"
+                    style={{
+                      width: itemIndex === index ? 26 : 8,
+                      backgroundColor: itemIndex === index ? item.accent : '#27313d',
+                    }}
+                  />
+                ))}
+              </div>
 
-                {slide.num === '04' && (
-                  <p className="text-center text-xs leading-relaxed text-[#7b8796] lg:text-left">
-                    This wallet note reflects the current implementation in this app build.
-                  </p>
-                )}
+              <div className="mt-auto flex flex-col gap-2 sm:flex-row">
+                <button
+                  onClick={previous}
+                  disabled={index === 0}
+                  className="flex items-center justify-center gap-2 rounded-2xl bg-white/[0.05] px-4 py-3 text-sm font-semibold text-dark-text transition-colors disabled:cursor-not-allowed disabled:opacity-35"
+                >
+                  <ArrowLeft size={16} />
+                  Back
+                </button>
+                <button
+                  onClick={next}
+                  className="flex flex-1 items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-bold"
+                  style={{ backgroundColor: slide.accent, color: '#08110d' }}
+                >
+                  {isLast ? 'Continue to App' : 'Next'}
+                  <ChevronRight size={17} />
+                </button>
               </div>
             </div>
           </div>

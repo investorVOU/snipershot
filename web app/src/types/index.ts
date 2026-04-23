@@ -67,6 +67,10 @@ export interface FeedToken extends PumpfunToken {
   creatorDumped: boolean
   creatorDumpPct: number
   fromCache: boolean
+  createdByWallet?: boolean
+  metadataUrl?: string
+  explorerUrl?: string
+  launchStatus?: 'confirmed' | 'partial' | 'failed'
 }
 
 export type FilterMode = 'all' | 'safe' | 'medium' | 'risky'
@@ -119,3 +123,6 @@ export interface UserProfile {
   totalTrades?: number
   winRate?: number
 }
+
+export * from './launch'
+export * from './swap'

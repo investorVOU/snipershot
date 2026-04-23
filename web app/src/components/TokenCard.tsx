@@ -8,6 +8,7 @@ import { AIVerdictModal } from './AIVerdictModal'
 import { NarrativeTags } from './NarrativeTags'
 import { formatAge, formatMarketCap, toHttpUrl } from '../services/format'
 import { useTheme } from '../context/ThemeContext'
+import { ProviderBadge } from './launch/ProviderBadge'
 
 const PUMPFUN_LOGO_URL = 'https://pump.fun/logo.png'
 
@@ -115,6 +116,14 @@ export function TokenCard({ token, onPress, onSnipe, onWatch, isWatched }: Props
 
         {/* Safety badges */}
         <div className="flex items-center gap-2 flex-wrap">
+          {token.launchSource && token.launchSource !== 'unknown' && (
+            <ProviderBadge provider={token.launchSource} />
+          )}
+          {token.createdByWallet && (
+            <span className="flex items-center gap-1 rounded-full border border-[#9945ff33] bg-[#9945ff14] px-2 py-0.5 text-[10px] font-semibold text-[#c7adff]">
+              Created by you
+            </span>
+          )}
           <RugScoreBadge rugFilter={token.rugFilter} loading={token.rugFilterLoading} size="sm" />
           <AIVerdictBadge
             aiRating={token.aiRating ?? null}

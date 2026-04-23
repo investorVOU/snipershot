@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, ExternalLink, Twitter, Globe, MessageCircle, Crosshair, Star, Users, Bot, Send, X } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Twitter, Globe, MessageCircle, Crosshair, Star, Users, Bot, Send, X, Copy, Check } from 'lucide-react'
 import type { FeedToken, AITokenRating, TokenOverview } from '../types'
 import { fetchDexScreenerSnapshot, fetchTokenByMint } from '../services/pumpfun'
 import { fetchTokenOverview, fetchTokenHoldersCount } from '../services/birdeye'
@@ -18,6 +18,10 @@ import { useAuth } from '../context/AuthContext'
 import { buyTokenForUser, sellTokenForUser } from '../services/solana'
 import { supabase } from '../services/supabase'
 import { useTheme } from '../context/ThemeContext'
+import { TokenLaunchDetailCard } from '../components/tokens/TokenLaunchDetailCard'
+import { useTokenTradability } from '../hooks/useTokenTradability'
+import { fetchLaunchedTokenByMint } from '../lib/supabase/launchRepository'
+import { resolveTokenCreatorAddress } from '../services/tokenCreator'
 
 function mergeOverview(overview: TokenOverview | null, holdersCount: number | null): TokenOverview | null {
   if (!overview) return null
@@ -62,6 +66,9 @@ export function TokenDetailPage() {
   const [chartStatus, setChartStatus] = useState<MemeChartStatus>('unknown')
   const [positionAmount, setPositionAmount] = useState(0)
   const [selling, setSelling] = useState(false)
+  const [launchRecord, setLaunchRecord] = useState<Record<string, unknown> | null>(null)
+  const [copiedField, setCopiedField] = useState<'mint' | 'creator' | null>(null)
+  const { status: tradabilityStatus, reason: tradabilityReason } = useTokenTradability(token?.mint ?? mint ?? null)
 
   const tokenContext = useMemo(() => {
     if (!token) return ''
@@ -197,6 +204,26 @@ export function TokenDetailPage() {
     void loadPosition()
   }, [loadPosition])
 
+  useEffect(() => {
+    if (!mint) return
+    fetchLaunchedTokenByMint(mint).then(setLaunchRecord)
+  }, [mint])
+
+  useEffect(() => {
+    const knownCreator = token?.creatorAddress || (launchRecord?.creator_wallet as string | undefined)
+    if (!mint || knownCreator) return
+
+    let cancelled = false
+    resolveTokenCreatorAddress(mint).then((creatorAddress) => {
+      if (cancelled || !creatorAddress) return
+      setToken((prev) => (prev ? { ...prev, creatorAddress } : prev))
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [launchRecord, mint, token?.creatorAddress])
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center h-screen">
@@ -223,6 +250,14 @@ export function TokenDetailPage() {
   const vol24h = token.overview?.volume24h ?? 0
   const liquidity = token.overview?.liquidity ?? 0
   const holders = token.overview?.holders ?? 0
+  const creatorAddress = token.creatorAddress || (launchRecord?.creator_wallet as string | undefined) || ''
+
+  const copyValue = useCallback((field: 'mint' | 'creator', value: string) => {
+    if (!value) return
+    navigator.clipboard.writeText(value)
+    setCopiedField(field)
+    window.setTimeout(() => setCopiedField((prev) => (prev === field ? null : prev)), 1500)
+  }, [])
 
   const sendChat = async () => {
     const text = chatInput.trim()
@@ -411,8 +446,20 @@ export function TokenDetailPage() {
           <h3 className="text-dark-text font-semibold mb-3">Token Info</h3>
           {token.description && <p className="text-dark-subtext text-sm leading-relaxed mb-3">{token.description}</p>}
           <div className="space-y-2 text-sm">
-            <InfoRow label="Mint" value={shortenAddress(token.mint, 8)} />
-            <InfoRow label="Creator" value={shortenAddress(token.creatorAddress, 8)} />
+            <InfoRow
+              label="Mint"
+              value={shortenAddress(token.mint, 8)}
+              copyableValue={token.mint}
+              copied={copiedField === 'mint'}
+              onCopy={() => copyValue('mint', token.mint)}
+            />
+            <InfoRow
+              label="Creator"
+              value={creatorAddress ? shortenAddress(creatorAddress, 8) : 'Unknown'}
+              copyableValue={creatorAddress || undefined}
+              copied={copiedField === 'creator'}
+              onCopy={creatorAddress ? () => copyValue('creator', creatorAddress) : undefined}
+            />
           </div>
           <div className="flex gap-2 mt-3 flex-wrap">
             {token.twitterUrl && (
@@ -440,6 +487,24 @@ export function TokenDetailPage() {
             </a>
           </div>
         </div>
+
+        {(launchRecord || token.launchSource === 'pumpfun' || token.launchSource === 'bags') && (
+          <TokenLaunchDetailCard
+            imageUrl={toHttpUrl((launchRecord?.image_url as string | undefined) ?? token.imageUri)}
+            name={(launchRecord?.token_name as string | undefined) ?? token.name}
+            symbol={(launchRecord?.token_symbol as string | undefined) ?? token.symbol}
+            mint={(launchRecord?.mint_address as string | undefined) ?? token.mint}
+            provider={((launchRecord?.provider as 'bags' | 'pumpfun' | undefined) ?? (token.launchSource === 'bags' ? 'bags' : 'pumpfun'))}
+            txSignature={(launchRecord?.tx_signature as string | undefined) ?? null}
+            createdAt={(launchRecord?.created_at as string | undefined) ?? null}
+            websiteUrl={(launchRecord?.website_url as string | undefined) ?? token.websiteUrl}
+            twitterUrl={(launchRecord?.twitter_url as string | undefined) ?? token.twitterUrl}
+            telegramUrl={(launchRecord?.telegram_url as string | undefined) ?? token.telegramUrl}
+            metadataUrl={(launchRecord?.metadata_public_url as string | undefined) ?? token.metadataUrl}
+            tradableStatus={tradabilityStatus}
+            tradableReason={tradabilityReason}
+          />
+        )}
       </div>
 
       <AIVerdictModal visible={verdictModal !== null} onClose={() => setVerdictModal(null)} verdict={verdictModal} tokenName={token.name} />
@@ -541,11 +606,30 @@ function StatBox({ label, value, color }: { label: string; value: string; color?
   )
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({
+  label,
+  value,
+  copyableValue,
+  copied = false,
+  onCopy,
+}: {
+  label: string
+  value: string
+  copyableValue?: string
+  copied?: boolean
+  onCopy?: () => void
+}) {
   return (
     <div className="flex items-center justify-between">
       <span className="text-dark-subtext">{label}</span>
-      <span className="text-dark-text font-mono text-xs">{value}</span>
+      <div className="flex items-center gap-2">
+        <span className="text-dark-text font-mono text-xs">{value}</span>
+        {copyableValue && onCopy && (
+          <button onClick={onCopy} className="text-dark-subtext hover:text-brand transition-colors" aria-label={`Copy ${label}`}>
+            {copied ? <Check size={14} className="text-brand" /> : <Copy size={14} />}
+          </button>
+        )}
+      </div>
     </div>
   )
 }
